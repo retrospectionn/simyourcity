@@ -2,6 +2,8 @@
 
 A full-stack GIS explorer for querying and visualizing OpenStreetMap data. Supports amenity points, polygon layers, and transit routes from PBF files or the Overpass API.
 
+> **Built entirely with [OpenCode](https://opencode.ai) using [MiMo V2.5](https://huggingface.co/XiaomiMiMo/MiMo-7B-RL)** — from architecture design to final implementation, every line of code was generated through AI-assisted development.
+
 ## Features
 
 - **Amenity Explorer** — 25 amenity types (fuel, police, hospital, school, pharmacy, restaurant, etc.) with radius rings and optional dissolve
@@ -68,3 +70,17 @@ SimYourCity/
 
 - **With PBF loaded** — fast local queries via pyosmium (no network required)
 - **Without PBF** — queries fall back to the Overpass API (requires internet)
+
+## Built with OpenCode
+
+This project was developed entirely inside [OpenCode](https://opencode.ai), an AI-powered coding agent, using the **MiMo V2.5** model. Every feature — from the pyosmium-based PBF scanner and dissolve geometry engine to the glassmorphism UI and SSE streaming endpoints — was designed, implemented, and debugged through conversational AI assistance.
+
+**What OpenCode handled:**
+- Full backend architecture (Flask, pyosmium, Overpass API integration)
+- Frontend implementation (MapLibre GL, vanilla JS, glassmorphism CSS)
+- PBF file management (GeoFabrik catalog, background download threading)
+- Transit route parsing from OSM relation members
+- Polygon dissolve via Shapely union operations
+- Iterative debugging of pyosmium API quirks (KeyFilter, sparse_file_array indexing, two-pass transit scan)
+
+**Tag:** `@opencode` `@mimo-v2.5`
