@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pkl
+*.log
+*.err.log
+pbf_files/
+simyourcity_state.json
+.env
+*.egg-info/
+dist/
+build/
+node_modules/
+.vscode/
+.idea/
