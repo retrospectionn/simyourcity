@@ -370,18 +370,18 @@ class PbfEngine:
         return self._poly_cache is not None
 
     def _polygon_cache_path(self):
-        return self.pbf_path + ".polys.pkl"
+        return self.pbf_path + ".polys.json"
 
     def _build_polygon_cache(self):
-        """Full-file scan resolving way node locations (once per process / pickle cache)."""
+        """Full-file scan resolving way node locations (once per process / json cache)."""
         import os
-        import pickle
+        import json
 
         cache_path = self._polygon_cache_path()
         try:
             if os.path.isfile(cache_path):
-                with open(cache_path, "rb") as f:
-                    payload = pickle.load(f)
+                with open(cache_path, "r") as f:
+                    payload = json.load(f)
                 st = os.stat(self.pbf_path)
                 if (payload.get("pbf_size"), payload.get("pbf_mtime")) == (st.st_size, st.st_mtime):
                     logger.info("Polygon cache loaded from %s", cache_path)
@@ -431,11 +431,11 @@ class PbfEngine:
         self._poly_cache = cache
 
         try:
-            with open(cache_path, "wb") as f:
+            with open(cache_path, "w") as f:
                 st = os.stat(self.pbf_path)
-                pickle.dump(
+                json.dump(
                     {"pbf_size": st.st_size, "pbf_mtime": st.st_mtime, "cache": cache},
-                    f, protocol=pickle.HIGHEST_PROTOCOL,
+                    f,
                 )
             logger.info("Polygon cache saved to %s", cache_path)
         except Exception as e:
@@ -504,18 +504,18 @@ class PbfEngine:
         return self._transit_cache is not None
 
     def _transit_cache_path(self):
-        return self.pbf_path + ".transit.v2.pkl"
+        return self.pbf_path + ".transit.v2.json"
 
     def _build_transit_cache(self):
         """Two-pass full-file scan resolving route relation member geometries."""
         import os
-        import pickle
+        import json
 
         cache_path = self._transit_cache_path()
         try:
             if os.path.isfile(cache_path):
-                with open(cache_path, "rb") as f:
-                    payload = pickle.load(f)
+                with open(cache_path, "r") as f:
+                    payload = json.load(f)
                 st = os.stat(self.pbf_path)
                 if (payload.get("pbf_size"), payload.get("pbf_mtime")) == (st.st_size, st.st_mtime):
                     logger.info("Transit cache loaded from %s", cache_path)
@@ -646,11 +646,11 @@ class PbfEngine:
         self._transit_cache = cache
 
         try:
-            with open(cache_path, "wb") as f:
+            with open(cache_path, "w") as f:
                 st = os.stat(self.pbf_path)
-                pickle.dump(
+                json.dump(
                     {"pbf_size": st.st_size, "pbf_mtime": st.st_mtime, "cache": cache},
-                    f, protocol=pickle.HIGHEST_PROTOCOL,
+                    f,
                 )
             logger.info("Transit cache saved to %s", cache_path)
         except Exception as e:
