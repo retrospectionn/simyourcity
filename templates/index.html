@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SimYourCity - GIS Explorer</title>
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%;overflow:hidden;background:#0a0a0f;font-family:'Segoe UI',system-ui,-apple-ui,sans-serif;color:#c8d8e8}
+  #app{display:flex;flex-direction:column;height:100vh}
+
+  /* ── Navbar ─────────────────────────────────────────────────────────────── */
+  .navbar{background:linear-gradient(135deg,#0f1923,#1a2332);border-bottom:1px solid #2a3a4a;padding:5px 14px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;z-index:100}
+  .navbar .logo{display:flex;align-items:center;gap:8px}
+  .navbar .logo h1{font-size:16px;font-weight:700;background:linear-gradient(90deg,#4fc3f7,#81c784);-webkit-background-clip:text;-webkit-text-fill-color:transparent;letter-spacing:1px}
+  .navbar .logo span{font-size:10px;color:#6b8299;letter-spacing:2px}
+  .nav-sep{width:1px;height:16px;background:#2a3a4a;margin:0 4px}
+  .nav-controls{display:flex;align-items:center;gap:6px}
+  .nav-btn{padding:4px 10px;font-size:11px;font-weight:600;border-radius:4px;cursor:pointer;border:1px solid #2a3a4a;background:transparent;color:#8aa4bc;transition:.15s}
+  .nav-btn:hover{border-color:#4fc3f7;color:#4fc3f7}
+  .nav-btn.active{background:#4fc3f722;border-color:#4fc3f7;color:#4fc3f7}
+
+  /* ── Toolbar ────────────────────────────────────────────────────────────── */
+  .toolbar{display:flex;align-items:center;gap:6px;padding:4px 14px;background:rgba(15,25,35,.92);border-bottom:1px solid #1a2a3a;flex-shrink:0;z-index:90}
+  .tool-btn{padding:5px 12px;font-size:11px;font-weight:600;border-radius:4px;cursor:pointer;border:1px solid #2a3a4a;background:rgba(255,255,255,.04);color:#8aa4bc;transition:.15s;display:flex;align-items:center;gap:5px}
+  .tool-btn:hover{border-color:#4fc3f7;color:#4fc3f7;background:rgba(79,195,247,.08)}
+  .tool-btn:disabled{opacity:.35;cursor:not-allowed;pointer-events:none}
+  .tool-btn.run{background:linear-gradient(135deg,#4fc3f7,#29b6f6);color:#fff;border:none}
+  .tool-btn.run:hover{filter:brightness(1.1)}
+  .tool-btn.run:disabled{background:#2a3a4a;color:#556}
+  .tool-sep{width:1px;height:18px;background:#2a3a4a}
+  .tool-info{font-size:10px;color:#5a7a95;font-family:'Consolas',monospace;margin-left:4px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tool-info.loaded{color:#4caf50}
+
+  /* ── Body ────────────────────────────────────────────────────────────────── */
+  .body-wrap{position:relative;flex:1;min-height:0}
+
+  /* ── Sidebar ─────────────────────────────────────────────────────────────── */
+  .sidebar{width:220px;background:linear-gradient(160deg,rgba(32,44,60,.42),rgba(13,20,30,.58));backdrop-filter:blur(18px) saturate(1.5);-webkit-backdrop-filter:blur(18px) saturate(1.5);border-right:1px solid rgba(255,255,255,.09);box-shadow:inset -1px 0 0 rgba(255,255,255,.05),6px 0 30px rgba(0,0,0,.35);flex-shrink:0;display:flex;flex-direction:column;position:absolute;top:0;left:0;bottom:0;z-index:20;transition:width .25s ease,border-color .25s ease,opacity .2s ease}
+  .sidebar.hidden{width:0;border-right-color:transparent;opacity:0}
+  .sidebar.hidden .sidebar-scroll,.sidebar.hidden .sidebar-footer,.sidebar.hidden .sidebar-header,.sidebar.hidden .resize-v{display:none}
+  .resize-v{position:absolute;top:0;right:-4px;width:8px;height:100%;cursor:col-resize;z-index:60}
+  .resize-v:hover{background:rgba(79,195,247,.25)}
+  .sidebar-header{padding:10px 12px 6px;font-size:10px;font-weight:700;color:#aec6dd;letter-spacing:2px;text-transform:uppercase;border-bottom:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.03)}
+  .sidebar-scroll{flex:1;overflow-y:auto;padding:6px 0}
+  .sidebar-scroll::-webkit-scrollbar{width:4px}
+  .sidebar-scroll::-webkit-scrollbar-thumb{background:#2a3a4a;border-radius:2px}
+  .amenity-item{display:flex;align-items:center;gap:8px;padding:5px 12px;cursor:pointer;transition:.12s;border-left:3px solid transparent}
+  .amenity-item:hover{background:#1a2a3a}
+  .amenity-item.checked{border-left-color:var(--acolor)}
+  .amenity-item input[type=checkbox]{accent-color:var(--acolor);width:14px;height:14px;cursor:pointer;flex-shrink:0}
+  .amenity-item .aicon{width:18px;height:18px;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+  .amenity-item .aicon svg{width:16px;height:16px}
+  .amenity-item .alabel{font-size:12px;color:#c8d8e8;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .amenity-item .acount{font-size:10px;color:#4a6a85;font-family:'Consolas',monospace;min-width:20px;text-align:right}
+  .sidebar-subheader{padding:8px 12px 4px;font-size:9px;font-weight:700;color:#8fa9c2;letter-spacing:2px;text-transform:uppercase;border-top:1px solid rgba(255,255,255,.05);margin-top:4px;background:rgba(255,255,255,.02)}
+  .sidebar-footer{padding:8px 12px;border-top:1px solid rgba(255,255,255,.07);display:flex;flex-direction:column;gap:6px;background:rgba(10,16,24,.45)}
+  .run-btn{width:100%;padding:8px;font-size:13px;font-weight:700;border:none;border-radius:4px;cursor:pointer;background:linear-gradient(135deg,#4fc3f7,#29b6f6);color:#fff;transition:.15s;display:flex;align-items:center;justify-content:center;gap:6px}
+  .run-btn:hover{filter:brightness(1.1)}
+  .run-btn:disabled{opacity:.4;cursor:not-allowed;filter:none}
+  .run-btn.running{background:linear-gradient(135deg,#ff9800,#f57c00);animation:pulse 1.5s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.7}}
+  .data-source{font-size:10px;color:#7a94ad;text-align:center;font-family:'Consolas',monospace}
+
+  /* ── Map ─────────────────────────────────────────────────────────────────── */
+  .map-area{position:absolute;top:0;left:0;right:0;bottom:0;min-width:0}
+  #map{position:absolute;top:0;left:0;right:0;bottom:0}
+  .maplibregl-ctrl-attrib{font-size:9px!important}
+
+  /* ── Transit panel ───────────────────────────────────────────────────────── */
+  .transit-panel{position:absolute;top:10px;right:56px;width:200px;background:linear-gradient(160deg,rgba(32,44,60,.42),rgba(13,20,30,.6));backdrop-filter:blur(18px) saturate(1.5);-webkit-backdrop-filter:blur(18px) saturate(1.5);border:1px solid rgba(255,255,255,.09);border-radius:6px;box-shadow:inset 0 1px 0 rgba(255,255,255,.05),6px 6px 30px rgba(0,0,0,.35);z-index:20;display:flex;flex-direction:column;overflow:hidden;max-height:calc(100% - 20px)}
+  .transit-panel.hidden{display:none}
+  .transit-panel .resize-v{position:absolute;top:0;left:-4px;width:8px;height:100%;cursor:col-resize;z-index:60}
+  .transit-panel .resize-v:hover{background:rgba(79,195,247,.25)}
+  .transit-header{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;font-size:10px;font-weight:700;color:#aec6dd;letter-spacing:2px;text-transform:uppercase;border-bottom:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.04);flex-shrink:0;cursor:pointer}
+  .transit-header:hover{background:rgba(255,255,255,.07)}
+  .transit-header .tcollapse{color:#8aa4bc;cursor:pointer;font-size:12px;letter-spacing:0}
+  .transit-body{padding:6px 8px;display:flex;flex-direction:column;gap:4px;overflow-y:auto}
+  .transit-body::-webkit-scrollbar{width:4px}
+  .transit-body::-webkit-scrollbar-thumb{background:#2a3a4a;border-radius:2px}
+  .transit-panel.collapsed .transit-body{display:none}
+  .t-stops{display:flex;align-items:center;gap:6px;font-size:11px;color:#c8d8e8;cursor:pointer;padding:3px 4px}
+  .t-stops input{accent-color:#4fc3f7;width:14px;height:14px;cursor:pointer}
+  .t-run-btn{width:100%;padding:7px;font-size:12px;font-weight:700;border:none;border-radius:4px;cursor:pointer;background:linear-gradient(135deg,#4fc3f7,#29b6f6);color:#fff;transition:.15s}
+  .t-run-btn:hover{filter:brightness(1.1)}
+  .t-run-btn:disabled{opacity:.4;cursor:not-allowed;filter:none}
+  .t-run-btn.running{background:linear-gradient(135deg,#ff9800,#f57c00);animation:pulse 1.5s ease-in-out infinite}
+  .t-status{font-size:10px;color:#7a94ad;font-family:'Consolas',monospace;text-align:center;padding:2px 0 4px}
+
+  /* ── Console ─────────────────────────────────────────────────────────────── */
+  .console-panel{height:180px;flex-shrink:0;background:linear-gradient(180deg,rgba(22,28,42,.35),rgba(8,10,16,.55));backdrop-filter:blur(18px) saturate(1.4);-webkit-backdrop-filter:blur(18px) saturate(1.4);border-top:1px solid rgba(255,255,255,.09);box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 -8px 30px rgba(0,0,0,.35);display:flex;flex-direction:column;transition:height .25s ease,border-color .25s ease,opacity .2s ease;overflow:hidden}
+  .console-panel.hidden{height:0;border-top-color:transparent;opacity:0}
+  .console-panel.hidden .console-body,.console-panel.hidden .console-header,.console-panel.hidden .progress-wrap{display:none}
+  .console-header{display:flex;align-items:center;justify-content:space-between;padding:4px 12px;background:rgba(255,255,255,.04);border-bottom:1px solid rgba(255,255,255,.06);flex-shrink:0;cursor:row-resize;user-select:none}
+  .console-header .ctitle{font-size:10px;font-weight:700;color:#aec6dd;letter-spacing:2px}
+  .console-header .ctitle svg{display:inline;vertical-align:middle;margin-right:6px}
+  .console-header .cstats{font-size:10px;color:#6b8aa5;font-family:'Consolas',monospace}
+  .console-body{flex:1;overflow-y:auto;padding:4px 12px;font-family:'Consolas','Courier New',monospace;font-size:12px;line-height:1.5}
+  .console-body::-webkit-scrollbar{width:4px}
+  .console-body::-webkit-scrollbar-thumb{background:#2a3a4a;border-radius:2px}
+  .console-body .clog{padding:0;white-space:pre-wrap;word-break:break-all}
+  .console-body .clog .ts{color:#4a5a6a;margin-right:8px}
+  .console-body .clog .level{font-weight:700;margin-right:6px}
+  .console-body .clog .level-i{color:#8aa4bc}
+  .console-body .clog .level-s{color:#4caf50}
+  .console-body .clog .level-w{color:#ff9800}
+  .console-body .clog .level-e{color:#f44336}
+  .console-body .clog .level-q{color:#64b5f6}
+  .progress-wrap{height:3px;background:#1a2a3a;flex-shrink:0}
+  .progress-fill{height:100%;width:0%;background:linear-gradient(90deg,#4fc3f7,#81c784);transition:width .3s ease}
+
+  /* ── Legend ──────────────────────────────────────────────────────────────── */
+  .legend-wrap{position:absolute;bottom:10px;right:10px;z-index:10;background:rgba(17,26,36,.55);backdrop-filter:blur(14px) saturate(1.4);-webkit-backdrop-filter:blur(14px) saturate(1.4);border:1px solid rgba(255,255,255,.09);box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 4px 20px rgba(0,0,0,.35);border-radius:6px;padding:6px 10px;font-size:10px;max-height:200px;overflow-y:auto;display:none}
+  .legend-wrap.show{display:block}
+  .legend-wrap .litem{display:flex;align-items:center;gap:6px;padding:2px 0;color:#c8d8e8}
+  .legend-wrap .ldot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+  .legend-wrap .lsq{width:10px;height:10px;border-radius:2px;flex-shrink:0}
+  .legend-wrap .lsw{width:14px;height:3px;border-radius:1.5px;flex-shrink:0}
+  .legend-title{font-weight:700;color:#8aa4bc;margin-bottom:4px;font-size:11px}
+
+  /* ── Modals ──────────────────────────────────────────────────────────────── */
+  .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);z-index:500;display:none;align-items:center;justify-content:center}
+  .modal-overlay.show{display:flex}
+  .modal{background:linear-gradient(160deg,#1a2535,#0d1520);border:1px solid #2a3a4a;border-radius:8px;width:420px;max-width:90vw;box-shadow:0 16px 48px rgba(0,0,0,.5)}
+  .modal-head{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid #1a2a3a}
+  .modal-head h3{font-size:13px;font-weight:700;color:#aec6dd}
+  .modal-x{background:none;border:none;color:#5a7a95;font-size:18px;cursor:pointer;padding:2px 6px;border-radius:4px}
+  .modal-x:hover{background:rgba(255,255,255,.08);color:#c8d8e8}
+  .modal-body{padding:16px 18px;display:flex;flex-direction:column;gap:12px}
+  .modal-label{font-size:11px;font-weight:600;color:#8aa4bc;letter-spacing:1px;text-transform:uppercase}
+  .modal-select,.modal-input{width:100%;padding:8px 10px;font-size:12px;background:#0a1520;border:1px solid #2a3a4a;color:#c8d8e8;border-radius:4px;font-family:inherit}
+  .modal-select:focus,.modal-input:focus{outline:none;border-color:#4fc3f7}
+  .modal-hint{font-size:10px;color:#5a7a95}
+  .modal-actions{display:flex;gap:8px;justify-content:flex-end;padding-top:4px}
+  .mbtn{padding:7px 16px;font-size:12px;font-weight:600;border:none;border-radius:4px;cursor:pointer;transition:.15s}
+  .mbtn.primary{background:#4fc3f7;color:#0a1520}
+  .mbtn.primary:hover{background:#81d4fa}
+  .mbtn.primary:disabled{opacity:.4;cursor:not-allowed}
+  .mbtn.secondary{background:rgba(255,255,255,.06);color:#8aa4bc;border:1px solid #2a3a4a}
+  .mbtn.secondary:hover{background:rgba(255,255,255,.1)}
+  .mbtn.danger{background:rgba(244,67,54,.15);color:#ef5350;border:1px solid rgba(244,67,54,.3)}
+  .mbtn.danger:hover{background:rgba(244,67,54,.25)}
+  .modal-progress{height:4px;background:#1a2a3a;border-radius:2px;overflow:hidden}
+  .modal-progress-fill{height:100%;background:linear-gradient(90deg,#4fc3f7,#81c784);transition:width .3s;width:0%}
+  .modal-status{font-size:11px;color:#8aa4bc;min-height:16px}
+  .modal-status.error{color:#ef5350}
+  .modal-status.ok{color:#4caf50}
+  .dl-detail{display:flex;justify-content:space-between;font-size:10px;color:#6b8aa5;font-family:'Consolas',monospace;padding:2px 0}
+  .tool-dl-indicator{display:flex;align-items:center;gap:6px;margin-left:8px}
+  .tool-dl-bar{width:80px;height:4px;background:#1a2a3a;border-radius:2px;overflow:hidden}
+  .tool-dl-fill{height:100%;background:linear-gradient(90deg,#4fc3f7,#81c784);transition:width .3s;width:0%}
+  .tool-dl-text{font-size:10px;color:#4fc3f7;font-family:'Consolas',monospace;white-space:nowrap}
+
+  @media(max-width:768px){.sidebar{width:180px}.console-panel{height:120px}.transit-panel{right:10px;width:170px}}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ── Navbar ──────────────────────────────────────────────────────────── -->
+  <nav class="navbar">
+    <div class="logo">
+      <svg width="28" height="28" viewBox="0 0 32 32"><rect x="2" y="2" width="28" height="28" rx="4" fill="#1a3050"/><text x="16" y="22" font-size="18" font-weight="bold" fill="#4fc3f7" text-anchor="middle" font-family="monospace">SYC</text></svg>
+      <div><h1>SimYourCity</h1><span>GIS EXPLORER</span></div>
+    </div>
+    <div class="nav-controls">
+      <button class="nav-btn" data-layer="satellite" onclick="switchLayer('satellite')">🛰 Satellite</button>
+      <button class="nav-btn active" data-layer="dark" onclick="switchLayer('dark')">🌙 Dark</button>
+      <button class="nav-btn" data-layer="light" onclick="switchLayer('light')">☀️ OSM</button>
+      <span class="nav-sep"></span>
+      <button class="nav-btn" id="btnSidebar" onclick="toggleSidebar()" title="Show/hide layers panel">☰ Panel</button>
+      <button class="nav-btn" id="btnConsole" onclick="toggleConsole()" title="Show/hide console">▤ Console</button>
+      <button class="nav-btn" id="btnTransit" onclick="toggleTransitPanel()" title="Show/hide transport panel">🚍 Transit</button>
+      <span class="nav-sep"></span>
+      <button class="nav-btn" id="btnMode" onclick="toggleMode()" title="Toggle pan / select mode">🜂 Pan</button>
+      <span class="tool-info" id="coordDisplay">33.6844, 73.0479</span>
+    </div>
+  </nav>
+
+  <!-- ── Toolbar ─────────────────────────────────────────────────────────── -->
+  <div class="toolbar" id="toolbar">
+    <button class="tool-btn" onclick="resetView()" title="Reset map to default view and clear all layers">↺ Reset</button>
+    <div class="tool-sep"></div>
+    <button class="tool-btn" onclick="showModal('downloadModal')" title="Download an OSM PBF extract from GeoFabrik">⬇ Download</button>
+    <button class="tool-btn" onclick="showModal('importModal')" title="Import a local .osm.pbf file">📂 Import</button>
+    <div class="tool-sep"></div>
+    <button class="tool-btn run" id="toolbarRunBtn" onclick="runQuery()" disabled title="Run query against the loaded PBF file">▶ Run Query</button>
+    <span class="tool-info" id="toolbarFile">No data loaded</span>
+    <div class="tool-dl-indicator" id="dlIndicator" style="display:none">
+      <div class="tool-dl-bar"><div class="tool-dl-fill" id="dlIndicatorFill"></div></div>
+      <span class="tool-dl-text" id="dlIndicatorText"></span>
+    </div>
+  </div>
+
+  <!-- ── Body ────────────────────────────────────────────────────────────── -->
+  <div class="body-wrap">
+
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <span>📋 Layers</span>
+        <span style="float:right;color:#4caf50;cursor:pointer;font-size:11px" onclick="toggleAllChecks()">Toggle All</span>
+      </div>
+      <div class="sidebar-scroll">
+        <div class="sidebar-subheader">📍 Point Amenities</div>
+        <div id="amenityList"></div>
+        <div class="sidebar-subheader">⬛ Polygon Layers</div>
+        <div id="polygonList"></div>
+      </div>
+      <div class="sidebar-footer">
+        <div style="display:flex;gap:4px">
+          <input type="number" id="radiusInput" value="500" min="50" max="5000" step="50" style="width:50px;padding:4px;font-size:11px;background:#0a1520;border:1px solid #1a2a3a;color:#c8d8e8;border-radius:3px;text-align:center" title="Radius (meters)">
+          <span style="font-size:10px;color:#4a6a85;display:flex;align-items:center">m radius</span>
+          <label style="font-size:10px;color:#4a6a85;display:flex;align-items:center;gap:2px;cursor:pointer" title="Show individual radius rings">
+            <input type="checkbox" id="toggleRadius" checked> <span>Rings</span>
+          </label>
+          <label style="font-size:10px;color:#4a6a85;display:flex;align-items:center;gap:2px;cursor:pointer;margin-left:auto" title="Merge overlapping rings into one polygon">
+            <input type="checkbox" id="toggleDissolve"> <span>Dissolve</span>
+          </label>
+        </div>
+        <button class="run-btn" id="runBtn" onclick="runQuery()">▶ Run Query</button>
+        <div class="data-source" id="dataSource">Source: Overpass API</div>
+      </div>
+      <div class="resize-v" id="sidebarResize" title="Drag to resize panel width"></div>
+    </aside>
+
+    <!-- Transit panel -->
+    <aside class="transit-panel" id="transitPanel">
+      <div class="resize-v" id="transitResize" title="Drag to resize panel width"></div>
+      <div class="transit-header" onclick="collapseTransit()">
+        <span>🚍 Transit</span>
+        <span class="tcollapse" id="transitCollapse">▾</span>
+      </div>
+      <div class="transit-body">
+        <div id="transitList"></div>
+        <label class="t-stops">
+          <input type="checkbox" id="chkTransitStops" checked onchange="onStopsChange()"> <span>Show stops</span>
+        </label>
+        <button class="t-run-btn" id="transitRunBtn" onclick="runTransitQuery()">▶ Query Transit</button>
+        <div class="t-status" id="transitStatus">Idle</div>
+      </div>
+    </aside>
+
+    <!-- Map -->
+    <div class="map-area">
+      <div id="map"></div>
+      <div class="legend-wrap" id="legendWrap">
+        <div class="legend-title">Legend</div>
+        <div id="legendItems"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Console ─────────────────────────────────────────────────────────── -->
+  <div class="console-panel">
+    <div class="console-header" id="consoleHeader" title="Drag to resize height">
+      <span class="ctitle">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#4a6a85" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+        OUTPUT CONSOLE
+      </span>
+      <span class="cstats" id="consoleStats">Ready — 0 lines</span>
+    </div>
+    <div class="console-body" id="consoleBody"></div>
+    <div class="progress-wrap"><div class="progress-fill" id="progressFill"></div></div>
+  </div>
+
+  <!-- ── Download modal ──────────────────────────────────────────────────── -->
+  <div class="modal-overlay" id="downloadModal">
+    <div class="modal">
+      <div class="modal-head">
+        <h3>⬇ Download PBF from GeoFabrik</h3>
+        <button class="modal-x" id="dlModalX" onclick="minimizeDownload()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="dlForm">
+          <div class="modal-label">Continent</div>
+          <select class="modal-select" id="dlContinent" onchange="populateCountries()"></select>
+          <div class="modal-label">Country</div>
+          <select class="modal-select" id="dlCountry"></select>
+        </div>
+        <div class="modal-progress" id="dlProgress" style="display:none"><div class="modal-progress-fill" id="dlProgressFill"></div></div>
+        <div class="modal-status" id="dlStatus"></div>
+        <div class="dl-detail" id="dlDetail" style="display:none">
+          <span id="dlSizeText"></span>
+          <span id="dlEtaText"></span>
+        </div>
+        <div class="modal-actions">
+          <button class="mbtn secondary" id="dlCancelBtn" onclick="cancelDownload()">Cancel</button>
+          <button class="mbtn primary" id="dlBtn" onclick="startDownload()">Download</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Import modal ────────────────────────────────────────────────────── -->
+  <div class="modal-overlay" id="importModal">
+    <div class="modal">
+      <div class="modal-head">
+        <h3>📂 Import PBF File</h3>
+        <button class="modal-x" onclick="hideModal('importModal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-label">File path</div>
+        <input class="modal-input" type="text" id="importPath" placeholder="C:\path\to\file.osm.pbf">
+        <div class="modal-hint">Full path to an existing .osm.pbf file on this machine.</div>
+        <div class="modal-status" id="importStatus"></div>
+        <div class="modal-actions">
+          <button class="mbtn secondary" onclick="hideModal('importModal')">Cancel</button>
+          <button class="mbtn primary" id="importBtn" onclick="startImport()">Import</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Files modal ─────────────────────────────────────────────────────── -->
+  <div class="modal-overlay" id="filesModal">
+    <div class="modal">
+      <div class="modal-head">
+        <h3>📁 Available PBF Files</h3>
+        <button class="modal-x" onclick="hideModal('filesModal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="filesList" style="max-height:300px;overflow-y:auto"></div>
+        <div class="modal-status" id="filesStatus"></div>
+        <div class="modal-actions">
+          <button class="mbtn secondary" onclick="hideModal('filesModal')">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const AMENITY_TYPES = {{ amenities | tojson | safe }};
+const POLYGON_TYPES = {{ polygons | tojson | safe }};
+const TRANSIT_TYPES = {{ transit | tojson | safe }};
+const DEFAULT_CENTER = {{ default_center | tojson | safe }};
+const DEFAULT_ZOOM = {{ default_zoom | tojson | safe }};
+const USE_PBF = {{ use_pbf | tojson | safe }};
+</script>
+<script src="{{ url_for('static', filename='js/simyourcity.js') }}"></script>
+</body>
+</html>
