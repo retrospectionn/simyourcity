@@ -79,9 +79,11 @@ def pbf_select():
 @app.route("/api/pbf/import", methods=["POST"])
 def pbf_import():
     data = request.get_json(force=True)
-    src = data.get("path", "").strip()
+    src = os.path.abspath(data.get("path", "").strip())
     if not src or not os.path.isfile(src):
         return jsonify({"error": "Source file not found"}), 404
+    if not src.lower().endswith(".osm.pbf"):
+        return jsonify({"error": "File must have a .osm.pbf extension"}), 400
 
     dest = os.path.join(PBF_DIR, os.path.basename(src))
     if os.path.abspath(src) != os.path.abspath(dest):
@@ -99,8 +101,10 @@ def pbf_import():
 def pbf_delete():
     data = request.get_json(force=True)
     filename = data.get("filename", "")
+    if not filename or os.sep in filename or "/" in filename or filename.startswith(".."):
+        return jsonify({"error": "Invalid filename"}), 400
     path = os.path.join(PBF_DIR, filename)
-    if not filename or not os.path.isfile(path):
+    if not os.path.isfile(path):
         return jsonify({"error": "File not found"}), 404
 
     if os.path.abspath(path) == os.path.abspath(config.PBF_PATH):
@@ -110,10 +114,10 @@ def pbf_delete():
         _refresh_engine()
 
     os.remove(path)
-    for suffix in (".polys.pkl", ".transit.v2.pkl"):
-        pkl = path + suffix
-        if os.path.isfile(pkl):
-            os.remove(pkl)
+    for suffix in (".polys.json", ".transit.v2.json"):
+        cache = path + suffix
+        if os.path.isfile(cache):
+            os.remove(cache)
     logger.info("Deleted PBF → %s", filename)
     return jsonify({"ok": True})
 
@@ -129,6 +133,8 @@ def pbf_download():
     url = data.get("url", "")
     if not url:
         return jsonify({"error": "No URL"}), 400
+    if not url.startswith(GEOFABRIK_BASE):
+        return jsonify({"error": "URL must be from download.geofabrik.de"}), 403
 
     filename = url.rsplit("/", 1)[-1]
     dest = os.path.join(PBF_DIR, filename)

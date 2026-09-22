@@ -2,6 +2,8 @@ __pycache__/
 *.pyc
 *.pyo
 *.pkl
+*.polys.json
+*.transit.v2.json
 *.log
 *.err.log
 pbf_files/

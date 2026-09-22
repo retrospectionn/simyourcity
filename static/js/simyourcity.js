@@ -53,6 +53,10 @@ let amenityLayers = {}, amenityCounts = {}, consoleCount = 0, zoomPxFactor = 1;
 let polygonLayers = {}, polygonCounts = {};
 let transitLayers = {}, transitCounts = {}, transitStops = null, isTransitRunning = false;
 let selectMode = false;
+
+function escHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
 const layerOpacity = 0.25;
 const polyFillOpacity = 0.28;
 
@@ -479,16 +483,16 @@ function initMap() {
       let html, lngLat;
       if (f.geometry.type === 'Polygon') {
         const cfg = POLYGON_TYPES[p.kind] || {};
-        html = `<strong>${p.name || '(unnamed)'}</strong><br>Type: ${cfg.label || p.kind}<br>Area: polygon`;
+        html = `<strong>${escHtml(p.name || '(unnamed)')}</strong><br>Type: ${escHtml(cfg.label || p.kind)}<br>Area: polygon`;
         lngLat = f.geometry.coordinates[0][0];
       } else if (f.geometry.type === 'LineString' || f.geometry.type === 'MultiLineString') {
         const cfg = TRANSIT_TYPES[p.kind] || {};
-        const name = p.name || p.ref || '(unnamed route)';
-        html = `<strong>${name}</strong><br>${cfg.label || p.kind}${p.ref ? ' · ' + p.ref : ''}`;
+        const name = escHtml(p.name || p.ref || '(unnamed route)');
+        html = `<strong>${name}</strong><br>${escHtml(cfg.label || p.kind)}${p.ref ? ' · ' + escHtml(p.ref) : ''}`;
         const coords = f.geometry.type === 'LineString' ? f.geometry.coordinates : f.geometry.coordinates[0];
         lngLat = coords[Math.min(20, coords.length - 1)];
       } else {
-        html = `<strong>${p.name || '(unnamed)'}</strong><br>Type: ${p.amenity}<br>(${f.geometry.coordinates[1].toFixed(5)}, ${f.geometry.coordinates[0].toFixed(5)})`;
+        html = `<strong>${escHtml(p.name || '(unnamed)')}</strong><br>Type: ${escHtml(p.amenity || 'poi')}<br>(${f.geometry.coordinates[1].toFixed(5)}, ${f.geometry.coordinates[0].toFixed(5)})`;
         lngLat = f.geometry.coordinates;
       }
       new maplibregl.Popup({ offset: 12, closeButton: true })
@@ -864,7 +868,7 @@ function addLog(level, msg) {
   const levelClass = { i: 'level-i', s: 'level-s', w: 'level-w', e: 'level-e', q: 'level-q' };
   const div = document.createElement('div');
   div.className = 'clog';
-  div.innerHTML = `<span class="ts">[${time}]</span><span class="level ${levelClass[level] || 'level-i'}">${levelMap[level] || 'INFO'}</span>${msg}`;
+  div.innerHTML = `<span class="ts">[${time}]</span><span class="level ${levelClass[level] || 'level-i'}">${levelMap[level] || 'INFO'}</span>${escHtml(msg)}`;
   body.appendChild(div);
   body.scrollTop = body.scrollHeight;
   consoleCount++;

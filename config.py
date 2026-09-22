@@ -33,7 +33,7 @@ USE_PBF = os.path.isfile(PBF_PATH) if PBF_PATH else False
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 OVERPASS_TIMEOUT = 60
 MAX_RETRIES = 5
-USER_AGENT = "SimYourCity/1.0 (educational; contact@simyourcity.dev)"
+USER_AGENT = "SimYourCity/1.0 (educational; open-source project)"
 
 # ─── Default view — Islamabad, Pakistan ───────────────────────────────────────
 DEFAULT_BBOX = [33.57, 72.82, 33.80, 73.20]
