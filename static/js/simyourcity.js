@@ -57,6 +57,135 @@ let selectMode = false;
 function escHtml(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
+
+const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
+let IS_STATIC = false;
+
+function detectStatic() {
+  return fetch('/api/pbf/status', { method: 'GET' })
+    .then(r => { IS_STATIC = false; return false; })
+    .catch(() => { IS_STATIC = true; return true; });
+}
+
+function overpassQuery(q) {
+  return fetch(OVERPASS_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+    body: q
+  }).then(r => {
+    if (!r.ok) throw new Error('Overpass HTTP ' + r.status);
+    return r.json();
+  });
+}
+
+function buildAmenityOverpass(amenities, bbox) {
+  const bboxStr = bbox.join(',');
+  const parts = [];
+  amenities.forEach(key => {
+    const cfg = AMENITY_TYPES[key] || {};
+    const tags = cfg.tags || [['amenity', key]];
+    tags.forEach(([k, v]) => {
+      parts.push(`  node["${k}"="${v}"](${bboxStr});`);
+    });
+  });
+  if (!parts.length) return null;
+  return `[out:json][timeout:90];\n(\n${parts.join('\n')}\n);\nout center;`;
+}
+
+function buildPolygonOverpass(polyKey, bbox) {
+  const cfg = POLYGON_TYPES[polyKey] || {};
+  const tags = cfg.tags || [];
+  if (!tags.length) return null;
+  const bboxStr = bbox.join(',');
+  const parts = tags.map(([k, v]) => `  way["${k}"="${v}"](${bboxStr});`);
+  return `[out:json][timeout:90];\n(\n${parts.join('\n')}\n);\nout geom;`;
+}
+
+function buildTransitOverpass(transitKinds, bbox) {
+  if (!transitKinds.length) return null;
+  const bboxStr = bbox.join(',');
+  const kinds = transitKinds.join('|');
+  return `[out:json][timeout:90];\nrelation["type"="route"]["route"~"^(${kinds})$"](${bboxStr});\nout geom;`;
+}
+
+function groupOverpassAmenities(elements, amenities) {
+  const results = {};
+  amenities.forEach(key => { results[key] = { type: 'FeatureCollection', features: [] }; });
+  elements.forEach(el => {
+    if (el.type !== 'node' || !el.tags) return;
+    amenities.forEach(key => {
+      const cfg = AMENITY_TYPES[key] || {};
+      const tags = cfg.tags || [['amenity', key]];
+      if (tags.some(([k, v]) => el.tags[k] === v)) {
+        results[key].features.push({
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [el.lon, el.lat] },
+          properties: { id: el.id, name: el.tags.name || '', amenity: key }
+        });
+      }
+    });
+  });
+  return results;
+}
+
+function polygonOverpassToFeature(elements, polyKey) {
+  const features = [];
+  const seen = new Set();
+  elements.forEach(el => {
+    if (el.type !== 'way' || seen.has(el.id) || !el.geometry || el.geometry.length < 3) return;
+    seen.add(el.id);
+    const coords = el.geometry.map(g => [g.lon, g.lat]);
+    features.push({
+      type: 'Feature',
+      geometry: { type: 'Polygon', coordinates: [coords] },
+      properties: { id: el.id, name: (el.tags || {}).name || '', kind: polyKey }
+    });
+  });
+  return { type: 'FeatureCollection', features };
+}
+
+function transitOverpassToFeature(elements, transitKinds) {
+  const routes = {};
+  const stopFeatures = [];
+  elements.forEach(el => {
+    if (el.type !== 'relation' || !el.tags) return;
+    const kind = el.tags.route;
+    if (!transitKinds.includes(kind)) return;
+    const lines = [];
+    (el.members || []).forEach(m => {
+      if (m.type === 'way' && m.geometry && m.geometry.length >= 2) {
+        const coords = m.geometry.map(g => [g.lon, g.lat]);
+        if (coords.length > 40) {
+          const simplified = [];
+          for (let i = 0; i < coords.length; i += Math.ceil(coords.length / 40)) simplified.push(coords[i]);
+          lines.push(simplified);
+        } else {
+          lines.push(coords);
+        }
+      }
+    });
+    if (!lines.length) return;
+    const geometry = lines.length === 1
+      ? { type: 'LineString', coordinates: lines[0] }
+      : { type: 'MultiLineString', coordinates: lines };
+    if (!routes[kind]) routes[kind] = { type: 'FeatureCollection', features: [] };
+    routes[kind].features.push({
+      type: 'Feature',
+      geometry,
+      properties: { id: el.id, name: el.tags.name || '', ref: el.tags.ref || '', kind }
+    });
+    (el.members || []).forEach(m => {
+      if (m.type === 'node' && m.geometry && m.geometry[0]) {
+        stopFeatures.push({
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [m.geometry[0].lon, m.geometry[0].lat] },
+          properties: { name: (m.tags || {}).name || '' }
+        });
+      }
+    });
+  });
+  return { routes, stops: { type: 'FeatureCollection', features: stopFeatures } };
+}
 const layerOpacity = 0.25;
 const polyFillOpacity = 0.28;
 
@@ -68,6 +197,19 @@ function init() {
   initResize();
   initToolbar();
   updateLegend();
+  detectStatic().then(isStatic => {
+    if (isStatic) {
+      document.getElementById('dataSource').textContent = 'Source: Overpass API (static)';
+      document.getElementById('toolbarFile').textContent = 'Static mode — Overpass API';
+      document.getElementById('toolbarRunBtn').disabled = false;
+      const dlBtn = document.querySelector('button[onclick="showModal(\'downloadModal\")"]');
+      const impBtn = document.querySelector('button[onclick="showModal(\'importModal\")"]');
+      if (dlBtn) dlBtn.style.display = 'none';
+      if (impBtn) impBtn.style.display = 'none';
+      addLog('i', 'Running in static mode (GitHub Pages) — queries go directly to Overpass API');
+      addLog('i', 'PBF download/import disabled. Use local server for PBF features.');
+    }
+  });
   document.getElementById('toggleRadius').addEventListener('change', toggleRadiusVisibility);
   document.getElementById('toggleDissolve').addEventListener('change', () => {
     if (isRunning) return;
@@ -734,6 +876,11 @@ function runQuery() {
 
   if (doDissolve) addLog('i', 'Dissolve mode ON — merging overlapping rings');
 
+  if (IS_STATIC) {
+    runStaticQuery(amenities, polygons, bbox, radii, doDissolve, btn);
+    return;
+  }
+
   fetch('/api/query', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -770,6 +917,98 @@ function runQuery() {
     btn.classList.remove('running');
     btn.innerHTML = '▶ Run Query';
   });
+}
+
+function runStaticQuery(amenities, polygons, bbox, radii, doDissolve, btn) {
+  addLog('i', 'Static mode — querying Overpass API directly from browser');
+  const promises = [];
+
+  if (amenities.length) {
+    const q = buildAmenityOverpass(amenities, bbox);
+    if (q) {
+      addLog('q', 'Overpass: ' + amenities.length + ' amenity type(s)');
+      promises.push(
+        overpassQuery(q).then(data => {
+          const grouped = groupOverpassAmenities(data.elements || [], amenities);
+          amenities.forEach(key => {
+            const fc = grouped[key] || { type: 'FeatureCollection', features: [] };
+            const cfg = AMENITY_TYPES[key] || {};
+            const count = fc.features.length;
+            amenityCounts[key] = count;
+            document.getElementById('cnt-' + key).textContent = count;
+            addLog('s', `Found ${count} ${cfg.label || key}`);
+            if (count > 0) {
+              let dissolved = null;
+              if (doDissolve) dissolved = dissolveCirclesJS(fc, radii[key] || cfg.radius || 500);
+              addAmenityLayer(key, fc, cfg.color, radii[key] || cfg.radius || 500, dissolved);
+            }
+          });
+          updateLegend();
+        }).catch(e => addLog('e', 'Amenity query failed: ' + e.message))
+      );
+    }
+  }
+
+  polygons.forEach(polyKey => {
+    const q = buildPolygonOverpass(polyKey, bbox);
+    if (!q) return;
+    const cfg = POLYGON_TYPES[polyKey] || {};
+    addLog('q', 'Overpass: ' + (cfg.label || polyKey));
+    promises.push(
+      overpassQuery(q).then(data => {
+        const fc = polygonOverpassToFeature(data.elements || [], polyKey);
+        polygonCounts[polyKey] = fc.features.length;
+        const el = document.getElementById('pcnt-' + polyKey);
+        if (el) el.textContent = fc.features.length;
+        addLog('s', `Found ${fc.features.length} ${(cfg.label || polyKey)}`);
+        if (fc.features.length > 0) {
+          addPolygonLayer(polyKey, fc, cfg.color, cfg.label || polyKey, fc.features.length);
+        }
+        updateLegend();
+      }).catch(e => addLog('e', 'Polygon query failed: ' + e.message))
+    );
+  });
+
+  document.getElementById('progressFill').style.width = '50%';
+
+  Promise.all(promises).then(() => {
+    document.getElementById('progressFill').style.width = '100%';
+    isRunning = false;
+    btn.disabled = false;
+    btn.classList.remove('running');
+    btn.innerHTML = '▶ Run Query';
+    addLog('s', 'All queries complete');
+    updateLegend();
+  });
+}
+
+function dissolveCirclesJS(fc, radiusMeters) {
+  const degPerMeterLat = 1 / 111320;
+  const lat = fc.features[0] ? fc.features[0].geometry.coordinates[1] : 33;
+  const degPerMeterLon = 1 / (111320 * Math.cos(lat * Math.PI / 180));
+  const rLat = radiusMeters * degPerMeterLat;
+  const rLon = radiusMeters * degPerMeterLon;
+  const circles = fc.features.map(f => {
+    const [cx, cy] = f.geometry.coordinates;
+    const pts = [];
+    for (let a = 0; a < 32; a++) {
+      const t = (a / 32) * 2 * Math.PI;
+      pts.push([cx + rLon * Math.cos(t), cy + rLat * Math.sin(t)]);
+    }
+    pts.push(pts[0]);
+    return pts;
+  });
+  if (!circles.length) return null;
+  if (circles.length === 1) return { type: 'Polygon', coordinates: circles };
+  try {
+    if (typeof turf !== 'undefined') {
+      const polys = circles.map(c => turf.polygon([c]));
+      let merged = polys[0];
+      for (let i = 1; i < polys.length; i++) merged = turf.union(merged, polys[i]);
+      return merged.geometry;
+    }
+  } catch (e) {}
+  return { type: 'MultiPolygon', coordinates: circles.map(c => [c]) };
 }
 
 function parseSSE(chunk) {
@@ -1166,6 +1405,11 @@ function runTransitQuery() {
   document.getElementById('transitStatus').textContent = 'Querying...';
   addLog('i', `Starting transit query for ${types.length} route type(s)`);
 
+  if (IS_STATIC) {
+    runStaticTransit(types, bbox, stops, btn);
+    return;
+  }
+
   fetch('/api/transit', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1200,6 +1444,41 @@ function runTransitQuery() {
     btn.innerHTML = '▶ Query Transit';
     document.getElementById('transitStatus').textContent = 'Error';
   });
+}
+
+function runStaticTransit(types, bbox, stops, btn) {
+  addLog('i', 'Static mode — querying Overpass for transit routes');
+  const q = buildTransitOverpass(types, bbox);
+  if (!q) { finishTransitBtn(btn, 'No query'); return; }
+  addLog('q', 'Overpass: ' + types.length + ' transit type(s)');
+  overpassQuery(q).then(data => {
+    const result = transitOverpassToFeature(data.elements || [], types);
+    Object.entries(result.routes).forEach(([kind, fc]) => {
+      const cfg = TRANSIT_TYPES[kind] || {};
+      addTransitLayer(kind, fc, cfg.color, cfg.label || kind, fc.features.length);
+      addLog('s', `Found ${fc.features.length} ${cfg.label || kind}`);
+    });
+    if (stops && result.stops.features.length) {
+      transitStops = result.stops;
+      setTransitStops(result.stops, result.stops.features.length);
+      addLog('s', `Found ${result.stops.features.length} stops`);
+    }
+    updateLegend();
+    document.getElementById('transitStatus').textContent = 'Done';
+    finishTransitBtn(btn, '▶ Query Transit');
+    addLog('s', 'Transit query complete');
+  }).catch(e => {
+    addLog('e', 'Transit query failed: ' + e.message);
+    document.getElementById('transitStatus').textContent = 'Error';
+    finishTransitBtn(btn, '▶ Query Transit');
+  });
+}
+
+function finishTransitBtn(btn, label) {
+  isTransitRunning = false;
+  btn.disabled = false;
+  btn.classList.remove('running');
+  btn.innerHTML = label;
 }
 
 function addTransitLayer(key, geojson, color, label, count) {
