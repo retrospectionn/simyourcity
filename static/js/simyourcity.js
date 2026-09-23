@@ -694,9 +694,17 @@ function toggleSidebar() {
 function toggleConsole() {
   const cp = document.querySelector('.console-panel');
   const btn = document.getElementById('btnConsole');
-  cp.classList.toggle('hidden');
-  btn.classList.toggle('active', !cp.classList.contains('hidden'));
-  setTimeout(() => map.resize(), 260);
+  const hiding = !cp.classList.contains('hidden');
+  if (hiding) {
+    cp.classList.add('hidden');
+    cp.style.height = '';
+  } else {
+    cp.classList.remove('hidden');
+    const savedH = parseInt(localStorage.getItem('syc_console_h'));
+    if (savedH) cp.style.height = savedH + 'px';
+  }
+  btn.classList.toggle('active', !hiding);
+  setTimeout(() => map.resize(), 300);
 }
 
 function toggleMode() {
