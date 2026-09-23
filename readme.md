@@ -2,6 +2,9 @@
   <img src="resources/banner.png" alt="SimYourCity banner">
 </p>
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+
 # SimYourCity
 
 A fully open-source full-stack GIS explorer for querying and visualizing OpenStreetMap amenity and landuse data. Supports amenity points, polygon layers, landuse, and transit routes from PBF files or the Overpass API.
