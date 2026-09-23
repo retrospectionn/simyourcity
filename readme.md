@@ -6,6 +6,8 @@
 
 A full-stack GIS explorer for querying and visualizing OpenStreetMap data. Supports amenity points, polygon layers, and transit routes from PBF files or the Overpass API.
 
+`#OpenStreetMap` `#OSM` `#GIS` `#Python` `#Osmium` `#pyosmium` `#GeoFabrik` `#CARTO` `#OverpassAPI` `#Flask` `#MapLibre` `#Shapely` `#GeoJSON` `#Mapping` `#UrbanPlanning` `#Transit` `#OpenData`
+
 > **Built entirely with [OpenCode](https://opencode.ai) using [MiMo V2.5](https://huggingface.co/XiaomiMiMo/MiMo-7B-RL)** — from architecture design to final implementation, every line of code was generated through AI-assisted development.
 
 ## Features
