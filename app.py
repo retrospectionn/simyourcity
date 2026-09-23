@@ -377,7 +377,7 @@ if __name__ == "__main__":
     logger.info(f"Data source: {'Local PBF file' if config.USE_PBF else 'Overpass API'}")
     if config.USE_PBF:
         logger.info(f"PBF: {config.PBF_PATH}")
-    logger.info(f"Default area: Islamabad, Pakistan")
+    logger.info(f"Default area: Ashgabat, Turkmenistan")
     logger.info(f"Open: http://{HOST}:{PORT}")
     logger.info("=" * 50)
     app.run(host=HOST, port=PORT, debug=DEBUG, threaded=True)

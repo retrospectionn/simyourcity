@@ -1,7 +1,7 @@
 /* SimYourCity - Main Application Script */
 
-const LAT = 33.6844;
-const LNG = 73.0479;
+const LAT = 37.9601;
+const LNG = 58.3261;
 
 const STYLES = {
   light: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
@@ -63,7 +63,11 @@ let IS_STATIC = false;
 
 function detectStatic() {
   return fetch('/api/pbf/status', { method: 'GET' })
-    .then(r => { IS_STATIC = false; return false; })
+    .then(r => {
+      if (!r.ok) throw new Error('no backend');
+      IS_STATIC = false;
+      return false;
+    })
     .catch(() => { IS_STATIC = true; return true; });
 }
 
@@ -197,6 +201,7 @@ function init() {
   initResize();
   initToolbar();
   updateLegend();
+  addLog('i', 'SimYourCity initialized — ready');
   detectStatic().then(isStatic => {
     if (isStatic) {
       document.getElementById('dataSource').textContent = 'Source: Overpass API (static)';
