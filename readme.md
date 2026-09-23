@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="resources/banner.png" alt="SimYourCity banner">
+</p>
+
 # SimYourCity
 
 A full-stack GIS explorer for querying and visualizing OpenStreetMap data. Supports amenity points, polygon layers, and transit routes from PBF files or the Overpass API.
