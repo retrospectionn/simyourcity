@@ -13,6 +13,30 @@ A full-stack GIS explorer for querying and visualizing OpenStreetMap data. Suppo
 - **Satellite/Dark/Light** — three base map styles with seamless switching
 - **Glass UI** — translucent panels with backdrop blur, resizable sidebar, collapsible console
 
+## Screenshots
+
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img src="resources/download.gif" alt="Downloading a country OSM file from the GeoFabrik catalog">
+      <br>
+      <sub><b>Download</b> — pick any of 188 countries from the GeoFabrik catalog and fetch the OSM extract with live progress</sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="resources/points.gif" alt="Amenity points populating the map">
+      <br>
+      <sub><b>Amenities</b> — 25 point types populate the map with radius rings and dissolve</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" colspan="2">
+      <img src="resources/routes.gif" alt="Bus and transit routes drawn on the map">
+      <br>
+      <sub><b>Transit</b> — bus, train, subway, tram and ferry routes drawn with their stops</sub>
+    </td>
+  </tr>
+</table>
+
 ## Requirements
 
 - Python 3.10+
@@ -26,6 +50,8 @@ python app.py
 ```
 
 Open `http://localhost:5000` in your browser.
+
+> **Note:** `app.py` uses Flask's built-in development server, which prints a `WARNING: This is a development server...` message. That's expected for local use. For any public/production deployment, run behind a WSGI server instead, e.g. `pip install waitress` then `waitress-serve --host=127.0.0.1 --port=5000 app:app`.
 
 ## PBF Files
 
