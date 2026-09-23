@@ -53,6 +53,7 @@ let amenityLayers = {}, amenityCounts = {}, consoleCount = 0, zoomPxFactor = 1;
 let polygonLayers = {}, polygonCounts = {};
 let transitLayers = {}, transitCounts = {}, transitStops = null, isTransitRunning = false;
 let selectMode = false;
+let usingOverpass = true;
 
 function escHtml(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -205,6 +206,8 @@ function init() {
   detectStatic().then(isStatic => {
     if (isStatic) {
       document.getElementById('dataSource').textContent = 'Source: Overpass API (static)';
+      document.getElementById('dataSource').classList.add('warn');
+      usingOverpass = true;
       document.getElementById('toolbarFile').textContent = 'Static mode — Overpass API';
       document.getElementById('toolbarRunBtn').disabled = false;
       const dlBtn = document.querySelector('button[onclick="showModal(\'downloadModal\")"]');
@@ -253,13 +256,24 @@ function refreshPbfStatus() {
         el.classList.add('loaded');
         btn.disabled = false;
         src.textContent = 'Source: Local PBF';
+        src.classList.remove('warn');
+        usingOverpass = false;
       } else {
         el.textContent = 'No data loaded';
         el.classList.remove('loaded');
         btn.disabled = true;
-        src.textContent = 'Source: Overpass API';
+        src.textContent = 'Source: Overpass API (no PBF)';
+        src.classList.add('warn');
+        usingOverpass = true;
       }
-    });
+    })
+    .catch(() => {});
+}
+
+function warnNoPbf(context) {
+  if (!usingOverpass) return;
+  addLog('w', `${context}: no local PBF loaded — using the public Overpass API.`);
+  addLog('w', 'Overpass is rate-limited; load a PBF via the toolbar for heavy or repeated queries.');
 }
 
 function resetView() {
@@ -882,6 +896,7 @@ function runQuery() {
   addLog('i', `SimYourCity v1.0 — Starting query for ${amenities.length} point + ${polygons.length} polygon type(s)`);
   addLog('i', `BBox: ${bbox.map(v => v.toFixed(4)).join(', ')}`);
   addLog('i', 'Connecting to data source...');
+  warnNoPbf('Amenity query');
 
   const radii = {};
   amenities.forEach(a => { radii[a] = radiusVal; });
@@ -1417,6 +1432,7 @@ function runTransitQuery() {
   btn.innerHTML = '⏳ Running...';
   document.getElementById('transitStatus').textContent = 'Querying...';
   addLog('i', `Starting transit query for ${types.length} route type(s)`);
+  warnNoPbf('Transit query');
 
   if (IS_STATIC) {
     runStaticTransit(types, bbox, stops, btn);

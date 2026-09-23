@@ -63,6 +63,10 @@
   .run-btn.running{background:linear-gradient(135deg,#ff9800,#f57c00);animation:pulse 1.5s ease-in-out infinite}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.7}}
   .data-source{font-size:10px;color:#7a94ad;text-align:center;font-family:'Consolas',monospace}
+  .data-source.warn{color:#ff9800}
+  .osm-attr{font-size:9px;color:#4a5a6a;text-align:center;padding-top:3px}
+  .osm-attr a{color:#5a7a95;text-decoration:none}
+  .osm-attr a:hover{color:#4fc3f7}
 
   /* ── Map ─────────────────────────────────────────────────────────────────── */
   .map-area{position:absolute;top:0;left:0;right:0;bottom:0;min-width:0}
@@ -221,6 +225,7 @@
         </div>
         <button class="run-btn" id="runBtn" onclick="runQuery()">▶ Run Query</button>
         <div class="data-source" id="dataSource">Source: Overpass API</div>
+        <div class="osm-attr">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors</div>
       </div>
       <div class="resize-v" id="sidebarResize" title="Drag to resize panel width"></div>
     </aside>

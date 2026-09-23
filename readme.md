@@ -97,6 +97,16 @@ SimYourCity/
 - **With PBF loaded** — fast local queries via pyosmium (no network required)
 - **Without PBF** — queries fall back to the Overpass API (requires internet)
 
+> **⚠️ Overpass etiquette** — When no PBF is loaded (or on the GitHub Pages static site), every query hits the public [Overpass API](https://overpass-api.de). That service is a shared, volunteer-run resource: repeated or large-area queries can get your IP rate-limited or temporarily blocked. Prefer loading a local PBF for heavy use, keep the map viewport small, and avoid hammering Run. See the [Overpass FAQ](https://wiki.openstreetmap.org/wiki/Overpass_API/FAQ#Usage_policies).
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
+
+## Attribution
+
+Map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors. OSM data is available under the [ODbL license](https://opendatacommons.org/licenses/odbl/1-0/). Basemaps by [CARTO](https://carto.com/attributions).
+
 ## Built with OpenCode
 
 This project was developed entirely inside [OpenCode](https://opencode.ai), an AI-powered coding agent, using the **MiMo V2.5** model. Every feature — from the pyosmium-based PBF scanner and dissolve geometry engine to the glassmorphism UI and SSE streaming endpoints — was designed, implemented, and debugged through conversational AI assistance.
