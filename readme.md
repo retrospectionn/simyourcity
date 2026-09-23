@@ -50,6 +50,15 @@ A full-stack GIS explorer for querying and visualizing OpenStreetMap data. Suppo
 
 ## Setup
 
+### Clone
+
+```bash
+git clone https://github.com/retrospectionn/simyourcity.git
+cd simyourcity
+```
+
+### Install & run
+
 ```bash
 pip install -r requirements.txt
 python app.py
