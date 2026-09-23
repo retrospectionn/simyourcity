@@ -4,7 +4,7 @@
 
 # SimYourCity
 
-A full-stack GIS explorer for querying and visualizing OpenStreetMap data. Supports amenity points, polygon layers, and transit routes from PBF files or the Overpass API.
+A fully open-source full-stack GIS explorer for querying and visualizing OpenStreetMap amenity and landuse data. Supports amenity points, polygon layers, landuse, and transit routes from PBF files or the Overpass API.
 
 `#OpenStreetMap` `#OSM` `#GIS` `#Python` `#Osmium` `#pyosmium` `#GeoFabrik` `#CARTO` `#OverpassAPI` `#Flask` `#MapLibre` `#Shapely` `#GeoJSON` `#Mapping` `#UrbanPlanning` `#Transit` `#OpenData`
 
@@ -100,7 +100,7 @@ SimYourCity/
 
 ## Data Source
 
-- **With PBF loaded** — fast local queries via pyosmium (no network required)
+- **With PBF loaded** — fast local queries via pyosmium (no network required) **HIGHLY RECOMMENDED**
 - **Without PBF** — queries fall back to the Overpass API (requires internet)
 
 > **⚠️ Overpass etiquette** — When no PBF is loaded (or on the GitHub Pages static site), every query hits the public [Overpass API](https://overpass-api.de). That service is a shared, volunteer-run resource: repeated or large-area queries can get your IP rate-limited or temporarily blocked. Prefer loading a local PBF for heavy use, keep the map viewport small, and avoid hammering Run. See the [Overpass FAQ](https://wiki.openstreetmap.org/wiki/Overpass_API/FAQ#Usage_policies).
