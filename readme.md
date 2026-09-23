@@ -68,7 +68,7 @@ python app.py
 
 Open `http://localhost:5000` in your browser.
 
-> **Note:** `app.py` uses Flask's built-in development server, which prints a `WARNING: This is a development server...` message. That's expected for local use. For any public/production deployment, run behind a WSGI server instead, e.g. `pip install waitress` then `waitress-serve --host=127.0.0.1 --port=5000 app:app`.
+> **Note:** `app.py` uses Flask's built-in development server, which prints a `WARNING: This is a development server...` message. That's expected for local use.
 
 ## PBF Files
 
