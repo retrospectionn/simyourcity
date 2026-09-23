@@ -52,8 +52,16 @@ A fully open-source full-stack GIS explorer for querying and visualizing OpenStr
 - Flask, requests, shapely, osmium (see `requirements.txt`)
 
 ## Setup
-
+If you haven't already, install Git for Windows. A quick Powershell command to install git:
 ```bash
+winget install --id Git.Git -e --source winget
+```
+
+
+
+After opening your intended install directory, Shift+Right Click in the folder, 'Open Powershell window here', and paste commands below
+```bash
+git clone https://github.com/retrospectionn/simyourcity.git
 pip install -r requirements.txt
 python app.py
 ```
