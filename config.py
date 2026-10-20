@@ -37,10 +37,10 @@ OVERPASS_TIMEOUT = 60
 MAX_RETRIES = 5
 USER_AGENT = "SimYourCity/1.0 (educational; open-source project)"
 
-# ─── Default view — Ashgabat, Turkmenistan ───────────────────────────────────
-DEFAULT_BBOX = [37.87, 58.28, 38.00, 58.42]
-DEFAULT_CENTER = [58.3261, 37.9601]
-DEFAULT_ZOOM = 13
+# ─── Default view — COMSATS University, Islamabad ────────────────────────────
+DEFAULT_BBOX = [33.635, 73.135, 33.665, 73.175]
+DEFAULT_CENTER = [73.1549, 33.6498]
+DEFAULT_ZOOM = 15
 
 # ─── Server config ────────────────────────────────────────────────────────────
 HOST = "127.0.0.1"
