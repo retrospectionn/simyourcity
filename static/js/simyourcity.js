@@ -217,9 +217,12 @@ function init() {
       const dlBtn = document.querySelector(`button[onclick="showModal('downloadModal')"]`);
       const impBtn = document.querySelector(`button[onclick="showModal('importModal')"]`);
       if (dlBtn) dlBtn.style.display = 'none';
-      if (impBtn) impBtn.style.display = 'none';
-      addLog('i', 'Running in static mode (GitHub Pages) — queries go directly to Overpass API');
-      addLog('i', 'PBF download/import disabled. Use local server for PBF features.');
+      if (impBtn) impBtn.title = 'Pick a local .osm.pbf file; it is parsed in your browser, nothing is uploaded';
+      document.getElementById('importHint').textContent =
+        'Choose an .osm.pbf file. It is parsed in your browser (nothing is uploaded); only the area around the current map view is kept.';
+      addLog('i', 'Running in static mode — queries go directly to Overpass API');
+      addLog('i', 'Use 📂 Import to query a downloaded .osm.pbf in your browser instead.');
+      loadCachedExtract();
     }
   });
   document.getElementById('toggleRadius').addEventListener('change', toggleRadiusVisibility);
@@ -484,6 +487,7 @@ function uploadPbf(file) {
   const fail = msg => { status.className = 'modal-status error'; status.textContent = msg; btn.disabled = false; };
   btn.disabled = true;
   status.className = 'modal-status';
+  if (IS_STATIC) { parsePbfInBrowser(file, status, btn, fail); return; }
   status.textContent = 'Importing... 0%';
 
   // XHR rather than fetch: PBF extracts can be hundreds of MB, so show upload progress.
@@ -506,6 +510,114 @@ function uploadPbf(file) {
     setTimeout(() => hideModal('importModal'), 1200);
   };
   xhr.send(form);
+}
+
+/* ─── In-browser PBF extract (static mode) ──────────────────────────────── */
+
+// {name, size, bbox:[s,w,n,e], elements, stats} — Overpass-shaped elements
+// pulled from a local PBF by static/js/pbf-worker.js.
+let localExtract = null;
+const EXTRACT_PAD_DEG = 0.15;
+
+function parsePbfInBrowser(file, status, btn, fail) {
+  const v = getBbox();
+  const pad = Math.max(EXTRACT_PAD_DEG, v[2] - v[0], v[3] - v[1]);
+  const bbox = [v[0] - pad, v[1] - pad, v[2] + pad, v[3] + pad];
+  const mb = b => (b / 1048576).toFixed(0);
+  status.textContent = 'Reading ' + file.name + '...';
+  addLog('i', `Parsing ${file.name} (${mb(file.size)} MB) in your browser — nothing is uploaded`);
+  addLog('i', `Keeping bbox ${bbox.map(x => x.toFixed(3)).join(', ')}`);
+  let worker;
+  try { worker = new Worker('static/js/pbf-worker.js'); } catch (e) { return fail('Web Worker unavailable: ' + e.message); }
+  let lastLogPct = -1;
+  worker.onmessage = ev => {
+    const msg = ev.data;
+    if (msg.type === 'progress') {
+      const pct = Math.round(msg.bytes / msg.total * 100);
+      status.textContent = `Parsing... ${pct}% (${mb(msg.bytes)} / ${mb(msg.total)} MB)`;
+      if (pct >= lastLogPct + 10) {
+        lastLogPct = pct - pct % 10;
+        addLog('q', `PBF ${pct}% — ${msg.stats.nodes.toLocaleString()} nodes, ${msg.stats.ways.toLocaleString()} ways scanned`);
+      }
+    } else if (msg.type === 'done') {
+      worker.terminate();
+      const r = msg.result;
+      const s = r.stats;
+      addLog('s', `Parsed in ${r.seconds.toFixed(1)} s: ${s.amenityNodes} amenity nodes, ${s.polygonWays} polygons, ${s.routeRelations} transit routes kept`);
+      setLocalExtract({ name: file.name, size: file.size, bbox: r.bbox, elements: r.elements, stats: s });
+      saveCachedExtract(localExtract);
+      status.className = 'modal-status ok';
+      status.textContent = 'Loaded ' + file.name + ' (' + r.seconds.toFixed(0) + ' s)';
+      btn.disabled = false;
+      setTimeout(() => hideModal('importModal'), 1200);
+    } else if (msg.type === 'error') {
+      worker.terminate();
+      addLog('e', 'PBF parse failed: ' + msg.message);
+      fail('Parse failed: ' + msg.message);
+    }
+  };
+  worker.onerror = e => { worker.terminate(); addLog('e', 'PBF worker error: ' + e.message); fail('Parse failed: ' + e.message); };
+  worker.postMessage({ file, bbox, config: { amenities: AMENITY_TYPES, polygons: POLYGON_TYPES, transit: TRANSIT_TYPES } });
+}
+
+function setLocalExtract(extract) {
+  localExtract = extract;
+  usingOverpass = false;
+  const src = document.getElementById('dataSource');
+  src.textContent = 'Source: Local PBF (in browser)';
+  src.classList.remove('warn');
+  const el = document.getElementById('toolbarFile');
+  el.textContent = extract.name + ' (' + (extract.size / 1048576).toFixed(0) + ' MB, in browser)';
+  el.classList.add('loaded');
+}
+
+// Cache the extracted subset (a few MB) so a reload needn't re-parse the PBF.
+function extractDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('simyourcity', 1);
+    req.onupgradeneeded = () => req.result.createObjectStore('extracts');
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function saveCachedExtract(extract) {
+  extractDb().then(db => {
+    const tx = db.transaction('extracts', 'readwrite');
+    tx.objectStore('extracts').put(extract, 'current');
+    tx.oncomplete = () => db.close();
+  }).catch(e => addLog('w', 'Could not cache extract in browser storage: ' + e.message));
+}
+
+function loadCachedExtract() {
+  extractDb().then(db => {
+    const req = db.transaction('extracts').objectStore('extracts').get('current');
+    req.onsuccess = () => {
+      db.close();
+      if (!req.result) return;
+      setLocalExtract(req.result);
+      addLog('s', `Using cached extract of ${req.result.name} from browser storage (re-import to refresh or move area)`);
+    };
+  }).catch(() => {});
+}
+
+function bboxOverlaps(a, b) { return a[0] <= b[2] && a[2] >= b[0] && a[1] <= b[3] && a[3] >= b[1]; }
+function bboxContains(a, b) { return a[0] <= b[0] && a[1] <= b[1] && a[2] >= b[2] && a[3] >= b[3]; }
+function ptInBbox(lat, lon, b) { return lat >= b[0] && lat <= b[2] && lon >= b[1] && lon <= b[3]; }
+
+// Static-mode element source: the in-browser extract when it covers the view,
+// else Overpass. `keep(el)` selects the extract elements the Overpass query would return.
+function staticElements(label, overpassQ, bbox, keep) {
+  if (localExtract && bboxOverlaps(localExtract.bbox, bbox)) {
+    addLog('q', 'Local PBF: ' + label);
+    if (!bboxContains(localExtract.bbox, bbox)) {
+      addLog('w', 'View extends past the imported area — re-import here for full coverage.');
+    }
+    return Promise.resolve({ elements: localExtract.elements.filter(keep) });
+  }
+  if (localExtract) addLog('w', 'View is outside the imported PBF area — falling back to Overpass.');
+  addLog('q', 'Overpass: ' + label);
+  return overpassQuery(overpassQ);
 }
 
 /* ─── Files modal ───────────────────────────────────────────────────────── */
@@ -928,15 +1040,16 @@ function runQuery() {
 }
 
 function runStaticQuery(amenities, polygons, bbox, radii, doDissolve, btn) {
-  addLog('i', 'Static mode — querying Overpass API directly from browser');
+  addLog('i', localExtract ? 'Static mode — querying the imported PBF in your browser' : 'Static mode — querying Overpass API directly from browser');
   const promises = [];
 
   if (amenities.length) {
     const q = buildAmenityOverpass(amenities, bbox);
     if (q) {
-      addLog('q', 'Overpass: ' + amenities.length + ' amenity type(s)');
       promises.push(
-        overpassQuery(q).then(data => {
+        staticElements(amenities.length + ' amenity type(s)', q, bbox,
+          el => el.type === 'node' && ptInBbox(el.lat, el.lon, bbox)
+        ).then(data => {
           const grouped = groupOverpassAmenities(data.elements || [], amenities);
           amenities.forEach(key => {
             const fc = grouped[key] || { type: 'FeatureCollection', features: [] };
@@ -961,9 +1074,13 @@ function runStaticQuery(amenities, polygons, bbox, radii, doDissolve, btn) {
     const q = buildPolygonOverpass(polyKey, bbox);
     if (!q) return;
     const cfg = POLYGON_TYPES[polyKey] || {};
-    addLog('q', 'Overpass: ' + (cfg.label || polyKey));
+    const tags = cfg.tags || [];
     promises.push(
-      overpassQuery(q).then(data => {
+      staticElements(cfg.label || polyKey, q, bbox, el => {
+        if (el.type !== 'way' || !tags.some(([k, v]) => el.tags[k] === v)) return false;
+        const b = el.bounds;
+        return bboxOverlaps([b.minlat, b.minlon, b.maxlat, b.maxlon], bbox);
+      }).then(data => {
         const fc = polygonOverpassToFeature(data.elements || [], polyKey);
         polygonCounts[polyKey] = fc.features.length;
         const el = document.getElementById('pcnt-' + polyKey);
@@ -1404,11 +1521,13 @@ function runTransitQuery() {
 }
 
 function runStaticTransit(types, bbox, stops, btn) {
-  addLog('i', 'Static mode — querying Overpass for transit routes');
+  addLog('i', localExtract ? 'Static mode — querying the imported PBF for transit routes' : 'Static mode — querying Overpass for transit routes');
   const q = buildTransitOverpass(types, bbox);
   if (!q) { finishTransitBtn(btn, 'No query'); return; }
-  addLog('q', 'Overpass: ' + types.length + ' transit type(s)');
-  overpassQuery(q).then(data => {
+  staticElements(types.length + ' transit type(s)', q, bbox, el =>
+    el.type === 'relation' && types.includes(el.tags.route) &&
+    el.members.some(m => m.geometry.some(g => ptInBbox(g.lat, g.lon, bbox)))
+  ).then(data => {
     const result = transitOverpassToFeature(data.elements || [], types);
     Object.entries(result.routes).forEach(([kind, fc]) => {
       const cfg = TRANSIT_TYPES[kind] || {};

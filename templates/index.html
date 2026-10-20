@@ -319,7 +319,7 @@
         <div class="modal-label">PBF file</div>
         <input class="modal-input" type="text" id="importPath" placeholder="No file selected" readonly onclick="startImport()" style="cursor:pointer">
         <input type="file" id="importFile" accept=".pbf" hidden onchange="uploadPbf(this.files[0])">
-        <div class="modal-hint">Choose an .osm.pbf file; it is copied into pbf_files/ and made active.</div>
+        <div class="modal-hint" id="importHint">Choose an .osm.pbf file; it is copied into pbf_files/ and made active.</div>
         <div class="modal-status" id="importStatus"></div>
         <div class="modal-actions">
           <button class="mbtn secondary" onclick="hideModal('importModal')">Cancel</button>

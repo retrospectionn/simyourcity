@@ -114,6 +114,7 @@ SimYourCity/
 
 - **With PBF loaded** — fast local queries via pyosmium (no network required) **HIGHLY RECOMMENDED**
 - **Without PBF** — queries fall back to the Overpass API (requires internet)
+- **Static site (Vercel)** — 📂 Import a downloaded `.osm.pbf`; a Web Worker parses it in your browser (nothing is uploaded) and keeps the area around the current view, cached in IndexedDB. Pakistan (157 MB) takes ~15 s. Queries in that area then skip Overpass.
 
 > **⚠️ Overpass etiquette** — When no PBF is loaded (or on the GitHub Pages static site), every query hits the public [Overpass API](https://overpass-api.de). That service is a shared, volunteer-run resource: repeated or large-area queries can get your IP rate-limited or temporarily blocked. Prefer loading a local PBF for heavy use, keep the map viewport small, and avoid hammering Run. See the [Overpass FAQ](https://wiki.openstreetmap.org/wiki/Overpass_API/FAQ#Usage_policies).
 
