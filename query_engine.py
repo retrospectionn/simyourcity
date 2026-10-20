@@ -104,6 +104,7 @@ def dissolve_circles(geojson_fc, radius_meters):
 
 class OverpassEngine:
     def __init__(self, config):
+        self.enabled = config.OVERPASS_ENABLED
         self.url = config.OVERPASS_URL
         self.max_retries = config.MAX_RETRIES
         self.user_agent = config.USER_AGENT
@@ -114,6 +115,8 @@ class OverpassEngine:
 
     def _post(self, overpass_query):
         """POST a raw Overpass query with retry/backoff. Returns parsed JSON."""
+        if not self.enabled:
+            raise RuntimeError("Overpass API is disabled during the mapathon - load a PBF file instead")
         headers = {
             "Accept": "application/json, text/plain, */*",
             "User-Agent": self.user_agent,

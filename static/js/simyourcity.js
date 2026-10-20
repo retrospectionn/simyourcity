@@ -64,6 +64,10 @@ function escHtml(s) {
 }
 
 const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
+// Off during the mapathon: participants query the imported Pakistan PBF instead.
+// Re-enable here and in config.py (OVERPASS_ENABLED) afterwards.
+const OVERPASS_ENABLED = false;
+const OVERPASS_OFF_MSG = 'Overpass API is disabled during the mapathon — download the Pakistan PBF (top of the sidebar), then 📂 Import it.';
 let IS_STATIC = false;
 
 function detectStatic() {
@@ -209,10 +213,10 @@ function init() {
   addLog('i', 'SimYourCity initialized — ready');
   detectStatic().then(isStatic => {
     if (isStatic) {
-      document.getElementById('dataSource').textContent = 'Source: Overpass API (static)';
+      document.getElementById('dataSource').textContent = OVERPASS_ENABLED ? 'Source: Overpass API (static)' : 'Source: imported PBF only';
       document.getElementById('dataSource').classList.add('warn');
-      usingOverpass = true;
-      document.getElementById('toolbarFile').textContent = 'Static mode — Overpass API';
+      usingOverpass = OVERPASS_ENABLED;
+      document.getElementById('toolbarFile').textContent = OVERPASS_ENABLED ? 'Static mode — Overpass API' : 'Static mode — import a PBF';
       document.getElementById('toolbarRunBtn').disabled = false;
       const dlBtn = document.querySelector(`button[onclick="showModal('downloadModal')"]`);
       const impBtn = document.querySelector(`button[onclick="showModal('importModal')"]`);
@@ -220,8 +224,12 @@ function init() {
       if (impBtn) impBtn.title = 'Pick a local .osm.pbf file; it is parsed in your browser, nothing is uploaded';
       document.getElementById('importHint').textContent =
         'Choose an .osm.pbf file. It is parsed in your browser (nothing is uploaded); only the area around the current map view is kept.';
-      addLog('i', 'Running in static mode — queries go directly to Overpass API');
-      addLog('i', 'Use 📂 Import to query a downloaded .osm.pbf in your browser instead.');
+      if (OVERPASS_ENABLED) {
+        addLog('i', 'Running in static mode — queries go directly to Overpass API');
+        addLog('i', 'Use 📂 Import to query a downloaded .osm.pbf in your browser instead.');
+      } else {
+        addLog('w', OVERPASS_OFF_MSG);
+      }
       loadCachedExtract();
     }
   });
@@ -269,7 +277,7 @@ function refreshPbfStatus() {
         el.textContent = 'No data loaded';
         el.classList.remove('loaded');
         btn.disabled = true;
-        src.textContent = 'Source: Overpass API (no PBF)';
+        src.textContent = OVERPASS_ENABLED ? 'Source: Overpass API (no PBF)' : 'Source: none — load a PBF';
         src.classList.add('warn');
         usingOverpass = true;
       }
@@ -279,6 +287,7 @@ function refreshPbfStatus() {
 
 function warnNoPbf(context) {
   if (!usingOverpass) return;
+  if (!OVERPASS_ENABLED) { addLog('w', `${context}: no local PBF loaded. ${OVERPASS_OFF_MSG}`); return; }
   addLog('w', `${context}: no local PBF loaded — using the public Overpass API.`);
   addLog('w', 'Overpass is rate-limited; load a PBF via the toolbar for heavy or repeated queries.');
 }
@@ -614,6 +623,11 @@ function staticElements(label, overpassQ, bbox, keep) {
       addLog('w', 'View extends past the imported area — re-import here for full coverage.');
     }
     return Promise.resolve({ elements: localExtract.elements.filter(keep) });
+  }
+  if (!OVERPASS_ENABLED) {
+    return Promise.reject(new Error(localExtract
+      ? 'View is outside the imported PBF area — re-import with the map over the area you need.'
+      : OVERPASS_OFF_MSG));
   }
   if (localExtract) addLog('w', 'View is outside the imported PBF area — falling back to Overpass.');
   addLog('q', 'Overpass: ' + label);
@@ -1040,7 +1054,7 @@ function runQuery() {
 }
 
 function runStaticQuery(amenities, polygons, bbox, radii, doDissolve, btn) {
-  addLog('i', localExtract ? 'Static mode — querying the imported PBF in your browser' : 'Static mode — querying Overpass API directly from browser');
+  if (localExtract || OVERPASS_ENABLED) addLog('i', localExtract ? 'Static mode — querying the imported PBF in your browser' : 'Static mode — querying Overpass API directly from browser');
   const promises = [];
 
   if (amenities.length) {
@@ -1521,7 +1535,7 @@ function runTransitQuery() {
 }
 
 function runStaticTransit(types, bbox, stops, btn) {
-  addLog('i', localExtract ? 'Static mode — querying the imported PBF for transit routes' : 'Static mode — querying Overpass for transit routes');
+  if (localExtract || OVERPASS_ENABLED) addLog('i', localExtract ? 'Static mode — querying the imported PBF for transit routes' : 'Static mode — querying Overpass for transit routes');
   const q = buildTransitOverpass(types, bbox);
   if (!q) { finishTransitBtn(btn, 'No query'); return; }
   staticElements(types.length + ' transit type(s)', q, bbox, el =>

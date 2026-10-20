@@ -32,6 +32,8 @@ PBF_PATH = _state.get("active_pbf", "")
 USE_PBF = os.path.isfile(PBF_PATH) if PBF_PATH else False
 
 # ─── Overpass API ─────────────────────────────────────────────────────────────
+# Off during the mapathon; re-enable here and in static/js/simyourcity.js afterwards.
+OVERPASS_ENABLED = False
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 OVERPASS_TIMEOUT = 60
 MAX_RETRIES = 5
