@@ -8,6 +8,7 @@ __pycache__/
 *.err.log
 pbf_files/
 simyourcity_state.json
+geofabrik_index.json
 .env
 *.egg-info/
 dist/

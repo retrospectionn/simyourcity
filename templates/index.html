@@ -187,7 +187,7 @@
     <button class="tool-btn" onclick="resetView()" title="Reset map to default view and clear all layers">↺ Reset</button>
     <div class="tool-sep"></div>
     <button class="tool-btn" onclick="showModal('downloadModal')" title="Download an OSM PBF extract from GeoFabrik">⬇ Download</button>
-    <button class="tool-btn" onclick="showModal('importModal')" title="Import a local .osm.pbf file">📂 Import</button>
+    <button class="tool-btn" onclick="showModal('importModal')" title="Pick a local .osm.pbf file to import">📂 Import</button>
     <div class="tool-sep"></div>
     <button class="tool-btn run" id="toolbarRunBtn" onclick="runQuery()" disabled title="Run query against the loaded PBF file">▶ Run Query</button>
     <span class="tool-info" id="toolbarFile">No data loaded</span>
@@ -306,13 +306,14 @@
         <button class="modal-x" onclick="hideModal('importModal')">✕</button>
       </div>
       <div class="modal-body">
-        <div class="modal-label">File path</div>
-        <input class="modal-input" type="text" id="importPath" placeholder="C:\path\to\file.osm.pbf">
-        <div class="modal-hint">Full path to an existing .osm.pbf file on this machine.</div>
+        <div class="modal-label">PBF file</div>
+        <input class="modal-input" type="text" id="importPath" placeholder="No file selected" readonly onclick="startImport()" style="cursor:pointer">
+        <input type="file" id="importFile" accept=".pbf" hidden onchange="uploadPbf(this.files[0])">
+        <div class="modal-hint">Choose an .osm.pbf file; it is copied into pbf_files/ and made active.</div>
         <div class="modal-status" id="importStatus"></div>
         <div class="modal-actions">
           <button class="mbtn secondary" onclick="hideModal('importModal')">Cancel</button>
-          <button class="mbtn primary" id="importBtn" onclick="startImport()">Import</button>
+          <button class="mbtn primary" id="importBtn" onclick="startImport()">📂 Browse…</button>
         </div>
       </div>
     </div>
@@ -343,7 +344,6 @@ const POLYGON_TYPES = {{ polygons | tojson | safe }};
 const TRANSIT_TYPES = {{ transit | tojson | safe }};
 const DEFAULT_CENTER = {{ default_center | tojson | safe }};
 const DEFAULT_ZOOM = {{ default_zoom | tojson | safe }};
-const USE_PBF = {{ use_pbf | tojson | safe }};
 </script>
 <script src="{{ url_for('static', filename='js/simyourcity.js') }}"></script>
 </body>

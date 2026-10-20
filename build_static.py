@@ -24,8 +24,6 @@ html = template.render(
     transit=config.TRANSIT_TYPES,
     default_center=config.DEFAULT_CENTER,
     default_zoom=config.DEFAULT_ZOOM,
-    use_pbf=False,
-    pbf_path="",
 )
 
 os.makedirs(DOCS, exist_ok=True)

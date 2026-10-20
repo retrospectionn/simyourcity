@@ -1,8 +1,5 @@
 /* SimYourCity - Main Application Script */
 
-const LAT = 37.9601;
-const LNG = 58.3261;
-
 const STYLES = {
   light: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
   dark: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
@@ -49,7 +46,7 @@ const SVG_ICONS = {
 };
 
 let map, activeSource, isRunning = false, eventSource = null;
-let amenityLayers = {}, amenityCounts = {}, consoleCount = 0, zoomPxFactor = 1;
+let amenityLayers = {}, amenityCounts = {}, consoleCount = 0;
 let polygonLayers = {}, polygonCounts = {};
 let transitLayers = {}, transitCounts = {}, transitStops = null, isTransitRunning = false;
 let selectMode = false;
@@ -210,8 +207,8 @@ function init() {
       usingOverpass = true;
       document.getElementById('toolbarFile').textContent = 'Static mode — Overpass API';
       document.getElementById('toolbarRunBtn').disabled = false;
-      const dlBtn = document.querySelector('button[onclick="showModal(\'downloadModal\")"]');
-      const impBtn = document.querySelector('button[onclick="showModal(\'importModal\")"]');
+      const dlBtn = document.querySelector(`button[onclick="showModal('downloadModal')"]`);
+      const impBtn = document.querySelector(`button[onclick="showModal('importModal')"]`);
       if (dlBtn) dlBtn.style.display = 'none';
       if (impBtn) impBtn.style.display = 'none';
       addLog('i', 'Running in static mode (GitHub Pages) — queries go directly to Overpass API');
@@ -462,27 +459,46 @@ function updateDlIndicator(pct, sizeText) {
 /* ─── Import modal ──────────────────────────────────────────────────────── */
 
 function startImport() {
-  const path = document.getElementById('importPath').value.trim();
+  const input = document.getElementById('importFile');
+  input.value = '';  // so picking the same file again still fires change
+  input.click();
+}
+
+function uploadPbf(file) {
+  if (!file) return;
   const status = document.getElementById('importStatus');
   const btn = document.getElementById('importBtn');
-  if (!path) { status.className = 'modal-status error'; status.textContent = 'Enter a file path'; return; }
+  document.getElementById('importPath').value = file.name;
+  if (!file.name.toLowerCase().endsWith('.osm.pbf')) {
+    status.className = 'modal-status error';
+    status.textContent = 'File must have a .osm.pbf extension';
+    return;
+  }
+  const fail = msg => { status.className = 'modal-status error'; status.textContent = msg; btn.disabled = false; };
   btn.disabled = true;
   status.className = 'modal-status';
-  status.textContent = 'Importing...';
+  status.textContent = 'Importing... 0%';
 
-  fetch('/api/pbf/import', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path })
-  }).then(r => r.json()).then(data => {
-    if (data.error) { status.className = 'modal-status error'; status.textContent = data.error; btn.disabled = false; return; }
-    status.className = 'modal-status ok'; status.textContent = 'Imported ' + data.active;
+  // XHR rather than fetch: PBF extracts can be hundreds of MB, so show upload progress.
+  const form = new FormData();
+  form.append('file', file);
+  const xhr = new XMLHttpRequest();
+  xhr.open('POST', '/api/pbf/upload');
+  xhr.upload.onprogress = e => {
+    if (e.lengthComputable) status.textContent = 'Importing... ' + Math.round(e.loaded / e.total * 100) + '%';
+  };
+  xhr.onerror = () => fail('Upload failed');
+  xhr.onload = () => {
+    let data;
+    try { data = JSON.parse(xhr.responseText); } catch { return fail('Upload failed (HTTP ' + xhr.status + ')'); }
+    if (data.error) return fail(data.error);
+    status.className = 'modal-status ok';
+    status.textContent = 'Imported ' + data.active;
     btn.disabled = false;
     refreshPbfStatus();
     setTimeout(() => hideModal('importModal'), 1200);
-  }).catch(err => {
-    status.className = 'modal-status error'; status.textContent = err.message; btn.disabled = false;
-  });
+  };
+  xhr.send(form);
 }
 
 /* ─── Files modal ───────────────────────────────────────────────────────── */
@@ -621,11 +637,6 @@ function initMap() {
 
   map.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), 'top-right');
 
-  map.on('load', () => {
-    updateZoomFactor();
-  });
-
-  map.on('zoom', updateZoomFactor);
   map.on('mousemove', (e) => {
     document.getElementById('coordDisplay').textContent =
       e.lngLat.lat.toFixed(4) + ', ' + e.lngLat.lng.toFixed(4);
@@ -662,15 +673,6 @@ function initMap() {
         .addTo(map);
     }
   });
-}
-
-function updateZoomFactor() {
-  const z = map.getZoom();
-  zoomPxFactor = Math.pow(2, z) / (156543.03 * Math.cos(LAT * Math.PI / 180));
-}
-
-function getRadiusPixels(radiusMeters) {
-  return radiusMeters * zoomPxFactor;
 }
 
 function switchLayer(name) {
@@ -761,42 +763,12 @@ function rebuildLayers() {
     ensurePolygonLayer(k);
   }
   for (const [k, v] of Object.entries(transitLayers)) {
-    try {
-      if (!map.getSource('tr-' + k)) {
-        map.addSource('tr-' + k, { type: 'geojson', data: v.fc });
-      }
-    } catch (e) {}
-    if (!map.getLayer('tr-casing-' + k)) {
-      try {
-        map.addLayer({
-          id: 'tr-casing-' + k, source: 'tr-' + k, type: 'line',
-          paint: { 'line-color': '#000', 'line-opacity': 0.35, 'line-width': 5, 'line-blur': 2 }
-        });
-      } catch (e) {}
-    }
-    if (!map.getLayer('tr-' + k)) {
-      try {
-        map.addLayer({
-          id: 'tr-' + k, source: 'tr-' + k, type: 'line',
-          paint: { 'line-color': v.color, 'line-opacity': 0.9, 'line-width': 2.8 }
-        });
-      } catch (e) {}
-    }
+    addTransitLayer(k, v.fc, v.color, v.label, v.count);
   }
-  if (transitStops && !map.getSource('tr-stops')) {
-    try {
-      map.addSource('tr-stops', { type: 'geojson', data: transitStops });
-      map.addLayer({
-        id: 'tr-stops', source: 'tr-stops', type: 'circle',
-        layout: { visibility: document.getElementById('chkTransitStops').checked ? 'visible' : 'none' },
-        paint: { 'circle-radius': 3.2, 'circle-color': '#fff', 'circle-stroke-width': 1.5, 'circle-stroke-color': '#111' }
-      });
-    } catch (e) {}
+  if (transitStops) {
+    setTransitStops(transitStops, transitStops.features ? transitStops.features.length : 0);
   }
 }
-
-const SVG_TOGGLE_ON = '<svg viewBox="0 0 16 16" style="width:12px;height:12px;vertical-align:middle"><circle cx="8" cy="8" r="6" fill="none" stroke="#4a6a85" stroke-width="1.5"/><circle cx="8" cy="8" r="3" fill="#4fc3f7"/></svg>';
-const SVG_TOGGLE_OFF = '<svg viewBox="0 0 16 16" style="width:12px;height:12px;vertical-align:middle"><circle cx="8" cy="8" r="6" fill="none" stroke="#4a6a85" stroke-width="1.5"/></svg>';
 
 function initAmenities() {
   const el = document.getElementById('amenityList');
@@ -863,6 +835,30 @@ function getBbox() {
   return [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()];
 }
 
+function streamSSE(path, body, onDone, onError) {
+  fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  }).then(resp => {
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    function read() {
+      reader.read().then(({ done, value }) => {
+        if (done) { onDone(); return; }
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop();
+        parts.forEach(part => { if (part.trim()) parseSSE(part); });
+        read();
+      });
+    }
+    read();
+  }).catch(err => onError(err));
+}
+
 function runQuery() {
   if (isRunning) return;
   const amenities = getSelectedAmenities();
@@ -909,36 +905,12 @@ function runQuery() {
     return;
   }
 
-  fetch('/api/query', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ amenities, polygons, bbox, radius: radii, dissolve: doDissolve })
-  }).then(resp => {
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    function read() {
-      reader.read().then(({ done, value }) => {
-        if (done) {
-          isRunning = false;
-          btn.disabled = false;
-          btn.classList.remove('running');
-          btn.innerHTML = '▶ Run Query';
-          return;
-        }
-        buffer += decoder.decode(value, { stream: true });
-        const parts = buffer.split('\n\n');
-        buffer = parts.pop();
-        parts.forEach(part => {
-          if (!part.trim()) return;
-          parseSSE(part);
-        });
-        read();
-      });
-    }
-    read();
-  }).catch(err => {
+  streamSSE('/api/query', { amenities, polygons, bbox, radius: radii, dissolve: doDissolve }, () => {
+    isRunning = false;
+    btn.disabled = false;
+    btn.classList.remove('running');
+    btn.innerHTML = '▶ Run Query';
+  }, err => {
     addLog('e', 'Connection error: ' + err.message);
     isRunning = false;
     btn.disabled = false;
@@ -1028,14 +1000,6 @@ function dissolveCirclesJS(fc, radiusMeters) {
   });
   if (!circles.length) return null;
   if (circles.length === 1) return { type: 'Polygon', coordinates: circles };
-  try {
-    if (typeof turf !== 'undefined') {
-      const polys = circles.map(c => turf.polygon([c]));
-      let merged = polys[0];
-      for (let i = 1; i < polys.length; i++) merged = turf.union(merged, polys[i]);
-      return merged.geometry;
-    }
-  } catch (e) {}
   return { type: 'MultiPolygon', coordinates: circles.map(c => [c]) };
 }
 
@@ -1074,8 +1038,6 @@ function parseSSE(chunk) {
     case 'query':
       if (data.batch && data.amenities) {
         addLog('q', `BATCH QUERY: ${data.amenities.join(', ')} (${data.amenities.length} types)`);
-      } else if (data.amenity) {
-        addLog('q', `QUERY: node["amenity"="${data.amenity}"]`);
       }
       if (data.polygons && data.polygons.length) {
         addLog('q', `POLYGON QUERY: ways(${data.polygons.join(', ')})`);
@@ -1119,11 +1081,6 @@ function parseSSE(chunk) {
       document.getElementById('runBtn').disabled = false;
       document.getElementById('runBtn').classList.remove('running');
       document.getElementById('runBtn').innerHTML = '▶ Run Query';
-      break;
-    case 'error':
-      addLog('e', data.message || 'Unknown error');
-      break;
-    case 'config':
       break;
   }
 }
@@ -1194,6 +1151,26 @@ function addAmenityLayer(amenity, geojson, color, radiusMeters, dissolvedGeom) {
   updateLegend();
 }
 
+function radiusCircleLayer(id, color, radiusMeters) {
+  return {
+    id, source: id, type: 'circle',
+    paint: {
+      'circle-radius': ['interpolate', ['linear'], ['zoom'],
+        10, radiusMeters * 0.008,
+        12, radiusMeters * 0.032,
+        14, radiusMeters * 0.126,
+        16, radiusMeters * 0.5,
+        18, radiusMeters * 2.0
+      ],
+      'circle-color': color,
+      'circle-opacity': layerOpacity,
+      'circle-stroke-width': 1.5,
+      'circle-stroke-color': color,
+      'circle-stroke-opacity': 0.5
+    }
+  };
+}
+
 function addLayerToMap(key, color, radiusMeters, dissolvedGeom) {
   if (map.getLayer('points-' + key)) return;
 
@@ -1216,25 +1193,7 @@ function addLayerToMap(key, color, radiusMeters, dissolvedGeom) {
     });
   } else if (showRadius) {
     // Classic mode — individual radius circles
-    layersToAdd.push({
-      id: 'radius-' + key,
-      source: 'radius-' + key,
-      type: 'circle',
-      paint: {
-        'circle-radius': ['interpolate', ['linear'], ['zoom'],
-          10, radiusMeters * 0.008,
-          12, radiusMeters * 0.032,
-          14, radiusMeters * 0.126,
-          16, radiusMeters * 0.5,
-          18, radiusMeters * 2.0
-        ],
-        'circle-color': color,
-        'circle-opacity': layerOpacity,
-        'circle-stroke-width': 1.5,
-        'circle-stroke-color': color,
-        'circle-stroke-opacity': 0.5
-      }
-    });
+    layersToAdd.push(radiusCircleLayer('radius-' + key, color, radiusMeters));
   }
 
   layersToAdd.push({
@@ -1324,19 +1283,7 @@ function toggleRadiusVisibility() {
         try {
           const src = map.getSource(rl);
           if (src) {
-            map.addLayer({
-              id: rl, source: rl, type: 'circle',
-              paint: {
-                'circle-radius': ['interpolate', ['linear'], ['zoom'],
-                  10, info.radius * 0.008, 12, info.radius * 0.032,
-                  14, info.radius * 0.126, 16, info.radius * 0.5, 18, info.radius * 2.0],
-                'circle-color': info.color,
-                'circle-opacity': layerOpacity,
-                'circle-stroke-width': 1.5,
-                'circle-stroke-color': info.color,
-                'circle-stroke-opacity': 0.5
-              }
-            });
+            map.addLayer(radiusCircleLayer(rl, info.color, info.radius));
           }
         } catch (e) {}
       }
@@ -1439,38 +1386,11 @@ function runTransitQuery() {
     return;
   }
 
-  fetch('/api/transit', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ types, bbox, stops })
-  }).then(resp => {
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    function read() {
-      reader.read().then(({ done, value }) => {
-        if (done) {
-          isTransitRunning = false;
-          btn.disabled = false;
-          btn.classList.remove('running');
-          btn.innerHTML = '▶ Query Transit';
-          return;
-        }
-        buffer += decoder.decode(value, { stream: true });
-        const parts = buffer.split('\n\n');
-        buffer = parts.pop();
-        parts.forEach(part => { if (part.trim()) parseSSE(part); });
-        read();
-      });
-    }
-    read();
-  }).catch(err => {
+  streamSSE('/api/transit', { types, bbox, stops }, () => {
+    finishTransitBtn(btn, '▶ Query Transit');
+  }, err => {
     addLog('e', 'Transit connection error: ' + err.message);
-    isTransitRunning = false;
-    btn.disabled = false;
-    btn.classList.remove('running');
-    btn.innerHTML = '▶ Query Transit';
+    finishTransitBtn(btn, '▶ Query Transit');
     document.getElementById('transitStatus').textContent = 'Error';
   });
 }

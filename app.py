@@ -2,18 +2,18 @@ import os
 import json
 import time
 import uuid
-import shutil
 import logging
 import threading
 import requests as http_requests
 from flask import Flask, render_template, Response, request, jsonify
+from werkzeug.utils import secure_filename
 
 import config
 from config import (
     AMENITY_TYPES, POLYGON_TYPES, TRANSIT_TYPES, DEFAULT_BBOX, DEFAULT_CENTER,
-    DEFAULT_ZOOM, HOST, PORT, DEBUG, PBF_DIR, GEOFABRIK_CATALOG, GEOFABRIK_BASE,
+    DEFAULT_ZOOM, HOST, PORT, DEBUG, PBF_DIR, GEOFABRIK_BASE,
 )
-from query_engine import QueryEngine, dissolve_circles
+from query_engine import QueryEngine, PbfEngine, dissolve_circles
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -26,7 +26,7 @@ _download_tasks = {}
 
 def _refresh_engine():
     """Re-create the PbfEngine after the active file changes."""
-    engine.pbf = __import__("query_engine", fromlist=["PbfEngine"]).PbfEngine(config)
+    engine.pbf = PbfEngine(config)
     engine.source = "pbf" if config.USE_PBF else "overpass"
 
 
@@ -41,8 +41,6 @@ def index():
         transit=TRANSIT_TYPES,
         default_center=DEFAULT_CENTER,
         default_zoom=DEFAULT_ZOOM,
-        use_pbf=config.USE_PBF,
-        pbf_path=config.PBF_PATH,
     )
 
 
@@ -53,9 +51,6 @@ def pbf_status():
     files = sorted(f for f in os.listdir(PBF_DIR) if f.endswith(".osm.pbf"))
     return jsonify({
         "active": os.path.basename(config.PBF_PATH) if config.USE_PBF else None,
-        "active_path": config.PBF_PATH if config.USE_PBF else None,
-        "use_pbf": config.USE_PBF,
-        "pbf_dir": PBF_DIR,
         "files": [{"name": f, "size_mb": round(os.path.getsize(os.path.join(PBF_DIR, f)) / 1_048_576, 1)} for f in files],
     })
 
@@ -76,25 +71,27 @@ def pbf_select():
     return jsonify({"ok": True, "active": filename})
 
 
-@app.route("/api/pbf/import", methods=["POST"])
-def pbf_import():
-    data = request.get_json(force=True)
-    src = os.path.abspath(data.get("path", "").strip())
-    if not src or not os.path.isfile(src):
-        return jsonify({"error": "Source file not found"}), 404
-    if not src.lower().endswith(".osm.pbf"):
+@app.route("/api/pbf/upload", methods=["POST"])
+def pbf_upload():
+    """Save a .osm.pbf chosen in the browser's file picker into pbf_files/ and make it active."""
+    upload = request.files.get("file")
+    filename = secure_filename(upload.filename) if upload else ""
+    if not filename:
+        return jsonify({"error": "No file uploaded"}), 400
+    if not filename.lower().endswith(".osm.pbf"):
         return jsonify({"error": "File must have a .osm.pbf extension"}), 400
 
-    dest = os.path.join(PBF_DIR, os.path.basename(src))
-    if os.path.abspath(src) != os.path.abspath(dest):
-        shutil.copy2(src, dest)
+    dest = os.path.join(PBF_DIR, filename)
+    partial = dest + ".part"
+    upload.save(partial)
+    os.replace(partial, dest)  # never leave a half-written file under the real name
 
     config.PBF_PATH = dest
     config.USE_PBF = True
     config._save_state({"active_pbf": dest})
     _refresh_engine()
-    logger.info("Imported PBF → %s", os.path.basename(dest))
-    return jsonify({"ok": True, "active": os.path.basename(dest)})
+    logger.info("Imported PBF → %s", filename)
+    return jsonify({"ok": True, "active": filename})
 
 
 @app.route("/api/pbf/delete", methods=["POST"])
@@ -124,7 +121,7 @@ def pbf_delete():
 
 @app.route("/api/pbf/geofabrik")
 def pbf_geofabrik():
-    return jsonify({"catalog": GEOFABRIK_CATALOG, "base": GEOFABRIK_BASE})
+    return jsonify({"catalog": config.load_geofabrik_catalog(), "base": GEOFABRIK_BASE})
 
 
 @app.route("/api/pbf/download", methods=["POST"])
@@ -181,13 +178,6 @@ def pbf_download_status(task_id):
         return jsonify({"error": "Unknown task"}), 404
     elapsed = time.time() - task.get("start_time", time.time())
     return jsonify({**task, "elapsed": round(elapsed, 1)})
-
-
-# ─── Reset ───────────────────────────────────────────────────────────────────
-
-@app.route("/api/reset", methods=["POST"])
-def api_reset():
-    return jsonify({"ok": True, "center": DEFAULT_CENTER, "zoom": DEFAULT_ZOOM})
 
 
 # ─── Query endpoints (unchanged logic) ───────────────────────────────────────
@@ -362,11 +352,6 @@ def transit():
             yield from emit("transit_done", message="Transit query failed", counts=counts, total=0)
 
     return Response(generate(), mimetype="text/event-stream")
-
-
-@app.route("/api/amenities")
-def get_amenities():
-    return Response(json.dumps(AMENITY_TYPES), mimetype="application/json")
 
 
 # ─── Main ────────────────────────────────────────────────────────────────────

@@ -26,7 +26,7 @@ A full-stack GIS explorer for querying and visualizing OpenStreetMap data. Suppo
     <td align="center" width="50%">
       <img src="resources/download.gif" alt="Downloading a country OSM file from the GeoFabrik catalog">
       <br>
-      <sub><b>Download</b> — pick any of 188 countries from the GeoFabrik catalog and fetch the OSM extract with live progress</sub>
+      <sub><b>Download</b> — pick any of ~545 GeoFabrik regions from its published index and fetch the OSM extract with live progress</sub>
     </td>
     <td align="center" width="50%">
       <img src="resources/points.gif" alt="Amenity points populating the map">
@@ -72,8 +72,8 @@ Open `http://localhost:5000` in your browser.
 
 Place `.osm.pbf` files in the `pbf_files/` directory, or use the toolbar to:
 
-- **Download** — select a country from the GeoFabrik catalog and download directly
-- **Import** — provide a full path to any `.osm.pbf` file on your machine
+- **Download** — select a region from the [GeoFabrik index](https://download.geofabrik.de/index-v1-nogeom.json) and download directly
+- **Import** — pick a local `.osm.pbf` with the browser's file picker; it is uploaded into `pbf_files/`
 - **Select** — switch between multiple downloaded PBF files
 
 The active PBF is tracked in `simyourcity_state.json`.
@@ -89,6 +89,7 @@ SimYourCity/
 ├── pbf_files/          Local PBF file storage
 ├── static/js/          Frontend JavaScript
 ├── templates/          HTML templates
+├── geofabrik_index.json     GeoFabrik catalogue cache (auto-generated)
 └── simyourcity_state.json   Active PBF tracking (auto-generated)
 ```
 
@@ -100,12 +101,11 @@ SimYourCity/
 | `/api/transit` | GET | Stream transit route/stop data (SSE) |
 | `/api/pbf/status` | GET | List PBF files and active selection |
 | `/api/pbf/select` | POST | Set active PBF file |
-| `/api/pbf/import` | POST | Import a PBF from a local path |
+| `/api/pbf/upload` | POST | Upload a PBF (multipart field `file`) and make it active |
 | `/api/pbf/delete` | POST | Delete a PBF file |
-| `/api/pbf/geofabrik` | GET | GeoFabrik catalog (continent/country list) |
+| `/api/pbf/geofabrik` | GET | GeoFabrik download index (continent → region → path) |
 | `/api/pbf/download` | POST | Start background download from GeoFabrik |
 | `/api/pbf/download/<task_id>` | GET | Poll download progress |
-| `/api/reset` | POST | Clear active PBF, revert to Overpass |
 
 ## Data Source
 

@@ -3,6 +3,8 @@ import time
 import random
 import math
 import logging
+import json
+import os
 
 import shapely  # noqa: F401 (used by dissolve_circles / transit merge)
 import shapely.geometry
@@ -28,6 +30,48 @@ def _match_amenity(rules, tags):
         if any(tags.get(k) == v for k, v in pairs):
             return key
     return None
+
+def _lines_geometry(lines):
+    """Wrap per-route coordinate lists into the GeoJSON line geometry shape."""
+    return (
+        {"type": "LineString", "coordinates": lines[0]}
+        if len(lines) == 1
+        else {"type": "MultiLineString", "coordinates": lines}
+    )
+
+def _lines_to_geometry(merged):
+    """Convert a merged route geometry into (geojson geometry, lines).
+
+    ``merged`` is a shapely LineString/MultiLineString (None/empty -> (None, None)).
+    Long routes (bounding box wider/taller than 0.5 degrees) are simplified
+    first.  ``lines`` holds one coordinate list per merged line.
+    """
+    if merged is None or merged.is_empty:
+        return None, None
+    minx, miny, maxx, maxy = merged.bounds
+    if maxx - minx > 0.5 or maxy - miny > 0.5:
+        merged = merged.simplify(0.0002, preserve_topology=True)
+    if merged.geom_type == "MultiLineString":
+        lines = [list(g.coords) for g in merged.geoms]
+    else:
+        lines = [list(merged.coords)]
+    return _lines_geometry(lines), lines
+
+def _dedupe_stops(points):
+    """De-duplicate (lon, lat) stops into a GeoJSON point FeatureCollection."""
+    seen_pts = set()
+    features = []
+    for lon, lat in points:
+        k = (round(lon, 5), round(lat, 5))
+        if k in seen_pts:
+            continue
+        seen_pts.add(k)
+        features.append({
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [lon, lat]},
+            "properties": {"name": ""},
+        })
+    return {"type": "FeatureCollection", "features": features}
 
 def dissolve_circles(geojson_fc, radius_meters):
     """Dissolve overlapping radius circles into merged polygons.
@@ -64,9 +108,9 @@ class OverpassEngine:
         self.max_retries = config.MAX_RETRIES
         self.user_agent = config.USER_AGENT
         self.timeout = config.OVERPASS_TIMEOUT
-        self.polygon_types = getattr(config, "POLYGON_TYPES", {})
-        self.amenity_types = getattr(config, "AMENITY_TYPES", {})
-        self.transit_types = getattr(config, "TRANSIT_TYPES", {})
+        self.polygon_types = config.POLYGON_TYPES
+        self.amenity_types = config.AMENITY_TYPES
+        self.transit_types = config.TRANSIT_TYPES
 
     def _post(self, overpass_query):
         """POST a raw Overpass query with retry/backoff. Returns parsed JSON."""
@@ -253,15 +297,9 @@ class OverpassEngine:
                 parts.append(line)
 
             merged = shapely.ops.linemerge(parts) if parts else None
-            if merged is None or merged.is_empty:
+            geometry, lines = _lines_to_geometry(merged)
+            if geometry is None:
                 continue
-            minx, miny, maxx, maxy = merged.bounds
-            if maxx - minx > 0.5 or maxy - miny > 0.5:
-                merged = merged.simplify(0.0002, preserve_topology=True)
-            if merged.geom_type == "MultiLineString":
-                lines = [list(g.coords) for g in merged.geoms]
-            else:
-                lines = [list(merged.coords)]
 
             route_stops = []
             for m in e.get("members", []):
@@ -278,11 +316,6 @@ class OverpassEngine:
                     continue
                 route_stops.append((lon, lat))
 
-            geometry = (
-                {"type": "LineString", "coordinates": lines[0]}
-                if len(lines) == 1
-                else {"type": "MultiLineString", "coordinates": lines}
-            )
             feature = {
                 "type": "Feature",
                 "geometry": geometry,
@@ -292,22 +325,9 @@ class OverpassEngine:
             routes[kind]["features"].append(feature)
             stops.extend(route_stops)
 
-        seen_pts = set()
-        stop_features = []
-        for lon, lat in stops:
-            k = (round(lon, 5), round(lat, 5))
-            if k in seen_pts:
-                continue
-            seen_pts.add(k)
-            stop_features.append({
-                "type": "Feature",
-                "geometry": {"type": "Point", "coordinates": [lon, lat]},
-                "properties": {"name": ""},
-            })
-
         return {
             "routes": routes,
-            "stops": {"type": "FeatureCollection", "features": stop_features},
+            "stops": _dedupe_stops(stops),
         }
 
     def _group_by_amenity(self, elements, rules):
@@ -353,15 +373,44 @@ class PbfEngine:
     def __init__(self, config):
         self.pbf_path = config.PBF_PATH
         self.available = config.USE_PBF
-        self.polygon_types = getattr(config, "POLYGON_TYPES", {})
-        self.amenity_types = getattr(config, "AMENITY_TYPES", {})
+        self.polygon_types = config.POLYGON_TYPES
+        self.amenity_types = config.AMENITY_TYPES
         self._poly_cache = None  # {key: [{"id","name","coords","minx","maxx","miny","maxy"}]}
-        self._cache_loaded = False
         self._cache_failed = False
-        self.transit_types = getattr(config, "TRANSIT_TYPES", {})
+        self.transit_types = config.TRANSIT_TYPES
         self._transit_cache = None  # list of route records (see _build_transit_cache)
-        self._transit_loaded = False
         self._transit_failed = False
+
+    # --- JSON caches ---
+
+    def _load_cache(self, path):
+        """Return the cached payload["cache"] value, or None when absent/stale.
+
+        The cache is only reused while it matches the PBF file's size and mtime.
+        """
+        try:
+            if os.path.isfile(path):
+                with open(path, "r") as f:
+                    payload = json.load(f)
+                st = os.stat(self.pbf_path)
+                if (payload.get("pbf_size"), payload.get("pbf_mtime")) == (st.st_size, st.st_mtime):
+                    return payload["cache"]
+        except Exception as e:
+            logger.warning("PBF cache load failed for %s: %s", path, e)
+        return None
+
+    def _save_cache(self, path, cache):
+        """Best-effort JSON write of *cache* wrapped in the PBF size/mtime envelope."""
+        try:
+            with open(path, "w") as f:
+                st = os.stat(self.pbf_path)
+                json.dump(
+                    {"pbf_size": st.st_size, "pbf_mtime": st.st_mtime, "cache": cache},
+                    f,
+                )
+            logger.info("PBF cache saved to %s", path)
+        except Exception as e:
+            logger.warning("PBF cache save failed for %s: %s", path, e)
 
     # --- Polygon (area) layers ---
 
@@ -374,22 +423,12 @@ class PbfEngine:
 
     def _build_polygon_cache(self):
         """Full-file scan resolving way node locations (once per process / json cache)."""
-        import os
-        import json
-
         cache_path = self._polygon_cache_path()
-        try:
-            if os.path.isfile(cache_path):
-                with open(cache_path, "r") as f:
-                    payload = json.load(f)
-                st = os.stat(self.pbf_path)
-                if (payload.get("pbf_size"), payload.get("pbf_mtime")) == (st.st_size, st.st_mtime):
-                    logger.info("Polygon cache loaded from %s", cache_path)
-                    self._poly_cache = payload["cache"]
-                    self._cache_loaded = True
-                    return
-        except Exception as e:
-            logger.warning("Polygon cache load failed: %s", e)
+        cached = self._load_cache(cache_path)
+        if cached is not None:
+            logger.info("Polygon cache loaded from %s", cache_path)
+            self._poly_cache = cached
+            return
 
         import osmium
 
@@ -429,17 +468,7 @@ class PbfEngine:
 
         cache = self._simplify_cache(handler.cache)
         self._poly_cache = cache
-
-        try:
-            with open(cache_path, "w") as f:
-                st = os.stat(self.pbf_path)
-                json.dump(
-                    {"pbf_size": st.st_size, "pbf_mtime": st.st_mtime, "cache": cache},
-                    f,
-                )
-            logger.info("Polygon cache saved to %s", cache_path)
-        except Exception as e:
-            logger.warning("Polygon cache save failed: %s", e)
+        self._save_cache(cache_path, cache)
 
     def _simplify_cache(self, cache):
         out = {}
@@ -508,22 +537,12 @@ class PbfEngine:
 
     def _build_transit_cache(self):
         """Two-pass full-file scan resolving route relation member geometries."""
-        import os
-        import json
-
         cache_path = self._transit_cache_path()
-        try:
-            if os.path.isfile(cache_path):
-                with open(cache_path, "r") as f:
-                    payload = json.load(f)
-                st = os.stat(self.pbf_path)
-                if (payload.get("pbf_size"), payload.get("pbf_mtime")) == (st.st_size, st.st_mtime):
-                    logger.info("Transit cache loaded from %s", cache_path)
-                    self._transit_cache = payload["cache"]
-                    self._transit_loaded = True
-                    return
-        except Exception as e:
-            logger.warning("Transit cache load failed: %s", e)
+        cached = self._load_cache(cache_path)
+        if cached is not None:
+            logger.info("Transit cache loaded from %s", cache_path)
+            self._transit_cache = cached
+            return
 
         import osmium
 
@@ -609,15 +628,9 @@ class PbfEngine:
                 if len(parts) > 1
                 else parts[0]
             )
-            if merged is None or merged.is_empty:
+            geometry, lines = _lines_to_geometry(merged)
+            if geometry is None:
                 continue
-            minx, miny, maxx, maxy = merged.bounds
-            if maxx - minx > 0.5 or maxy - miny > 0.5:
-                merged = merged.simplify(0.0002, preserve_topology=True)
-            if merged.geom_type == "MultiLineString":
-                lines = [list(g.coords) for g in merged.geoms]
-            else:
-                lines = [list(merged.coords)]
 
             xs, ys = [], []
             for line in lines:
@@ -644,17 +657,7 @@ class PbfEngine:
             })
 
         self._transit_cache = cache
-
-        try:
-            with open(cache_path, "w") as f:
-                st = os.stat(self.pbf_path)
-                json.dump(
-                    {"pbf_size": st.st_size, "pbf_mtime": st.st_mtime, "cache": cache},
-                    f,
-                )
-            logger.info("Transit cache saved to %s", cache_path)
-        except Exception as e:
-            logger.warning("Transit cache save failed: %s", e)
+        self._save_cache(cache_path, cache)
 
     def query_transit(self, transit_types, bbox, include_stops):
         if not self.available or not transit_types:
@@ -681,11 +684,7 @@ class PbfEngine:
                     or r["maxy"] < bbox_t[0] or r["miny"] > bbox_t[2]):
                 continue
 
-            geometry = (
-                {"type": "LineString", "coordinates": r["lines"][0]}
-                if len(r["lines"]) == 1
-                else {"type": "MultiLineString", "coordinates": r["lines"]}
-            )
+            geometry = _lines_geometry(r["lines"])
             routes.setdefault(r["kind"], {"type": "FeatureCollection", "features": []})
             routes[r["kind"]]["features"].append({
                 "type": "Feature",
@@ -699,22 +698,9 @@ class PbfEngine:
                     if (bbox_t[0] <= lat <= bbox_t[2] and bbox_t[1] <= lon <= bbox_t[3]):
                         stops.append((lon, lat))
 
-        seen_pts = set()
-        stop_features = []
-        for lon, lat in stops:
-            k = (round(lon, 5), round(lat, 5))
-            if k in seen_pts:
-                continue
-            seen_pts.add(k)
-            stop_features.append({
-                "type": "Feature",
-                "geometry": {"type": "Point", "coordinates": [lon, lat]},
-                "properties": {"name": ""},
-            })
-
         return {
             "routes": routes,
-            "stops": {"type": "FeatureCollection", "features": stop_features},
+            "stops": _dedupe_stops(stops),
         }
 
     def query_batch(self, amenities, bbox):
@@ -741,10 +727,7 @@ class PbfEngine:
             if amenity is None:
                 continue
 
-            if obj.is_node():
-                lat, lon = obj.location.lat, obj.location.lon
-            else:
-                continue
+            lat, lon = obj.location.lat, obj.location.lon
 
             if not (bbox_t[0] <= lat <= bbox_t[2] and bbox_t[1] <= lon <= bbox_t[3]):
                 continue
