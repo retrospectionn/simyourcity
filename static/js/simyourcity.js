@@ -3,6 +3,13 @@
 const STYLES = {
   light: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
   dark: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
+  osm: {
+    version: 8, name: 'OSM', glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf', sources: {
+      osm: { type: 'raster', tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'], tileSize: 256, maxzoom: 19, attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors' }
+    }, layers: [
+      { id: 'osm-bg', type: 'raster', source: 'osm' }
+    ]
+  },
   satellite: {
     version: 8, name: 'Satellite', glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf', sources: {
       esri: { type: 'raster', tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'], tileSize: 256, maxzoom: 19, attribution: '© Esri' },
@@ -676,14 +683,15 @@ function initMap() {
 }
 
 function switchLayer(name) {
-  document.querySelectorAll('.layer-btn').forEach(b => b.classList.toggle('active', b.dataset.layer === name));
+  document.querySelectorAll('.nav-btn[data-layer]').forEach(b => b.classList.toggle('active', b.dataset.layer === name));
 
   const style = STYLES[name];
   if (!style) return;
 
   if (typeof style === 'string') {
     const current = map.getStyle();
-    if (current && current.name === 'Satellite') {
+    // Raster styles (Satellite, OSM) share nothing with the CARTO vector styles, so don't diff.
+    if (current && (current.name === 'Satellite' || current.name === 'OSM')) {
       map.setStyle(style, { diff: false });
     } else {
       map.setStyle(style, { diff: true });
