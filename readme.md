@@ -2,9 +2,12 @@
   <img src="resources/banner.png" alt="SimYourCity banner">
 </p>
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+
 # SimYourCity
 
-A full-stack GIS explorer for querying and visualizing OpenStreetMap data. Supports amenity points, polygon layers, and transit routes from PBF files or the Overpass API.
+A fully open-source full-stack GIS explorer for querying and visualizing OpenStreetMap amenity and landuse data. Supports amenity points, polygon layers, landuse, and transit routes from PBF files or the Overpass API.
 
 `#OpenStreetMap` `#OSM` `#GIS` `#Python` `#Osmium` `#pyosmium` `#GeoFabrik` `#CARTO` `#OverpassAPI` `#Flask` `#MapLibre` `#Shapely` `#GeoJSON` `#Mapping` `#UrbanPlanning` `#Transit` `#OpenData`
 
@@ -49,24 +52,24 @@ A full-stack GIS explorer for querying and visualizing OpenStreetMap data. Suppo
 - Flask, requests, shapely, osmium (see `requirements.txt`)
 
 ## Setup
+If you haven't already, install Git for Windows. A quick Powershell command to install git:
+```bash
+winget install --id Git.Git -e --source winget
+```
 
-### Clone
 
+
+After opening your intended install directory, Shift+Right Click in the folder, 'Open Powershell window here', and paste commands below
 ```bash
 git clone https://github.com/retrospectionn/simyourcity.git
 cd simyourcity
-```
-
-### Install & run
-
-```bash
 pip install -r requirements.txt
 python app.py
 ```
 
 Open `http://localhost:5000` in your browser.
 
-> **Note:** `app.py` uses Flask's built-in development server, which prints a `WARNING: This is a development server...` message. That's expected for local use. For any public/production deployment, run behind a WSGI server instead, e.g. `pip install waitress` then `waitress-serve --host=127.0.0.1 --port=5000 app:app`.
+> **Note:** `app.py` uses Flask's built-in development server, which prints a `WARNING: This is a development server...` message. That's expected for local use.
 
 ## PBF Files
 
@@ -109,7 +112,7 @@ SimYourCity/
 
 ## Data Source
 
-- **With PBF loaded** — fast local queries via pyosmium (no network required)
+- **With PBF loaded** — fast local queries via pyosmium (no network required) **HIGHLY RECOMMENDED**
 - **Without PBF** — queries fall back to the Overpass API (requires internet)
 
 > **⚠️ Overpass etiquette** — When no PBF is loaded (or on the GitHub Pages static site), every query hits the public [Overpass API](https://overpass-api.de). That service is a shared, volunteer-run resource: repeated or large-area queries can get your IP rate-limited or temporarily blocked. Prefer loading a local PBF for heavy use, keep the map viewport small, and avoid hammering Run. See the [Overpass FAQ](https://wiki.openstreetmap.org/wiki/Overpass_API/FAQ#Usage_policies).
