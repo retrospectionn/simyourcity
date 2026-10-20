@@ -739,7 +739,7 @@ function initResize() {
 function initMap() {
   map = new maplibregl.Map({
     container: 'map',
-    style: STYLES.dark,
+    style: STYLES.osm,
     center: DEFAULT_CENTER,
     zoom: DEFAULT_ZOOM,
     pitch: 0,
